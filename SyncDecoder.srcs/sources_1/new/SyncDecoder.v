@@ -51,12 +51,12 @@ module SyncDecoder #(
 
     // Edge detection registers
     reg hsync_d, vsync_d, de_d;
-    wire hsync_active       = (hsync != hsync_idle_level);
-    wire hsync_rising_edge  = (hsync_active && !hsync_d);
-    wire hsync_falling_edge = (!hsync_active && hsync_d);
-    wire vsync_rising_edge  = (vsync && !vsync_d);
-    wire vsync_falling_edge = (!vsync && vsync_d);
-    wire de_rising_edge     = (de && !de_d);
+    wire hsync_active   = (hsync != hsync_idle_level);
+    wire hsync_start    = (hsync_active && !hsync_d);
+    wire hsync_end      = (!hsync_active && hsync_d);
+    wire vsync_start    = (vsync && !vsync_d);
+    wire vsync_end      = (!vsync && vsync_d);
+    wire de_start       = (de && !de_d);
 
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -67,8 +67,6 @@ module SyncDecoder #(
     reg [11:0] v_de_start;
     reg        line_has_de;
     reg [11:0] vsync_h_position;
-
-    
 
     // Edge detection
     always @(posedge pixel_clk or negedge rst_n) begin
@@ -83,9 +81,13 @@ module SyncDecoder #(
         end
     end
     
+    // Determine idle level of HSYNC
     reg hsync_idle_level;
-    always @(posedge pixel_clk) begin
-        if (de_rising_edge) begin
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            // Default to active-low sync (idle = 1) which is standard for VGA/HDMI
+            hsync_idle_level <= 1'b1; 
+        end else if (de_start) begin
             hsync_idle_level <= hsync_d;
         end
     end
@@ -95,37 +97,37 @@ module SyncDecoder #(
         if (!rst_n) begin
             h_count <= 0;
             h_total <= 0;
-        end else if (hsync_rising_edge) begin
-            h_total <= h_count;
+        end else if (hsync_end) begin
+            h_total <= h_count + 1'b1;
             h_count <= 0;
         end else begin
             h_count <= h_count + 1'b1;
         end
     end
     
+    // Debugging output
     always @(posedge pixel_clk) begin
-        if (hsync_rising_edge)
-            $display("Time=%0t: HSYNC RISING EDGE - h_count=%0d, h_total=%0d", 
-                     $time, h_count, h_total);
-        if (hsync_falling_edge)
-            $display("Time=%0t: HSYNC FALLING EDGE - h_sync_count=%0d", 
-                     $time, h_sync_count);
+        if (hsync_start)
+            $display("Time=%0t: HSYNC-START h_count=%0d, h_total=%0d", $time, h_count, h_total);
+        if (hsync_end)
+            $display("Time=%0t: HSYNC-END - h_sync_count=%0d",$time, h_sync_count);
     end
     
     initial begin
         $monitor("Time=%0t: hsync=%b hsync_d=%b rising=%b h_count=%0d h_total=%0d",
-        $time, hsync, hsync_d, hsync_rising_edge, h_count, h_total);
+        $time, hsync, hsync_d, hsync_start, h_count, h_total);
     end
+    //--------------------
 
     // Vertical line counter
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             v_count <= 0;
             v_total <= 0;
-        end else if (vsync_rising_edge) begin
+        end else if (vsync_start) begin
             v_total <= v_count;
             v_count <= 0;
-        end else if (hsync_rising_edge) begin
+        end else if (hsync_start) begin
             v_count <= v_count + 1'b1;
         end
     end
@@ -135,10 +137,10 @@ module SyncDecoder #(
         if (!rst_n) begin
             h_sync_count <= 0;
             h_sync_len   <= 0;
-        end else if (hsync_falling_edge) begin
+        end else if (hsync_end) begin
             h_sync_len   <= h_sync_count;
             h_sync_count <= 0;
-        end else if (hsync) begin
+        end else if (hsync_active) begin
             h_sync_count <= h_sync_count + 1'b1;
         end
     end
@@ -151,10 +153,10 @@ module SyncDecoder #(
             h_active    <= 0;
             h_backporch <= 0;
         end else begin
-            if (hsync_rising_edge) begin
+            if (hsync_start) begin
                 h_active    <= h_de_count;
                 h_de_count  <= 0;
-            end else if (de_rising_edge) begin
+            end else if (de_start) begin
                 h_backporch <= h_count - h_sync_len;
                 h_de_start  <= h_count;
             end else if (de) begin
@@ -168,10 +170,10 @@ module SyncDecoder #(
         if (!rst_n) begin
             v_sync_count <= 0;
             v_sync_len   <= 0;
-        end else if (vsync_falling_edge) begin
+        end else if (vsync_end) begin
             v_sync_len   <= v_sync_count;
             v_sync_count <= 0;
-        end else if (vsync && hsync_rising_edge) begin
+        end else if (vsync && hsync_start) begin
             v_sync_count <= v_sync_count + 1'b1;
         end
     end
@@ -185,11 +187,11 @@ module SyncDecoder #(
             v_backporch <= 0;
             line_has_de <= 1'b0;
         end else begin
-            if (vsync_rising_edge) begin
+            if (vsync_start) begin
                 v_active   <= v_de_count;
                 v_de_count <= 0;
                 line_has_de <= 1'b0;
-            end else if (hsync_falling_edge) begin
+            end else if (hsync_end) begin
                 if (line_has_de) begin
                     v_de_count <= v_de_count + 1'b1;
                 end
@@ -212,7 +214,7 @@ module SyncDecoder #(
             interlaced         <= 1'b0;
             field_id           <= 1'b0;
             vsync_h_position   <= 0;
-        end else if (vsync_rising_edge) begin
+        end else if (vsync_start) begin
             vsync_h_position <= h_count;
             
             // Check if VSYNC occurs near half-line position
@@ -223,15 +225,14 @@ module SyncDecoder #(
                 interlaced <= 1'b0;
             end
             
-            // Field ID toggles each VSYNC
-            field_id <= ~field_id;
+            field_id <= ~field_id; // Field ID toggles each VSYNC
         end
     end
 
     // Output assignments
     assign pixel_valid  = de;
     assign pixel_data   = rgb;
-    assign line_start   = hsync_rising_edge;
-    assign frame_start  = vsync_rising_edge;
+    assign line_start   = hsync_start;
+    assign frame_start  = vsync_start;
 
 endmodule
