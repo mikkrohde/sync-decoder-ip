@@ -358,6 +358,11 @@ module tb_SyncDecoder;
                         H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P, 
                         V_SYNC_480P, V_BACKPORCH_480P, 0);
         
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
+        
         // ==========================================
         // Test 2: 480i NTSC interlaced
         // ==========================================
@@ -376,6 +381,11 @@ module tb_SyncDecoder;
         check_measurements(H_TOTAL_480P, H_ACTIVE_480P, H_SYNC_480P,
                         H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P,
                         V_SYNC_480P, V_BACKPORCH_480P, 1);
+                        
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
         
         // ==========================================
         // Test 3: 576p PAL progressive
@@ -395,6 +405,11 @@ module tb_SyncDecoder;
         check_measurements(H_TOTAL_576P, H_ACTIVE_576P, H_SYNC_576P,
                         H_BACKPORCH_576P, V_TOTAL_576P, V_ACTIVE_576P,
                         V_SYNC_576P, V_BACKPORCH_576P, 0);
+                        
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
         
         // ==========================================
         // Test 4: 576i PAL interlaced
@@ -414,6 +429,11 @@ module tb_SyncDecoder;
         check_measurements(H_TOTAL_576P, H_ACTIVE_576P, H_SYNC_576P,
                         H_BACKPORCH_576P, V_TOTAL_576P, V_ACTIVE_576P,
                         V_SYNC_576P, V_BACKPORCH_576P, 1);
+                        
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
         
         // ==========================================
         // Test 5: 720p HD
@@ -433,16 +453,21 @@ module tb_SyncDecoder;
         check_measurements(H_TOTAL_720P, H_ACTIVE_720P, H_SYNC_720P,
                         H_BACKPORCH_720P, V_TOTAL_720P, V_ACTIVE_720P,
                         V_SYNC_720P, V_BACKPORCH_720P, 0);
+                        
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
         
         $display("\n========================================");
         $display("All Tests Complete!");
         $display("========================================");
         $display("Tested formats:");
-        $display("  NTSC 480p (progressive)");
-        $display("  NTSC 480i (interlaced)");
-        $display("  PAL 576p (progressive)");
-        $display("  PAL 576i (interlaced)");
-        $display("  HD 720p (progressive)");
+        $display(" NTSC 480p (progressive)");
+        $display(" NTSC 480i (interlaced)");
+        $display(" PAL 576p (progressive)");
+        $display(" PAL 576i (interlaced)");
+        $display(" HD 720p (progressive)");
         $display("========================================\n");
         $finish;
     end

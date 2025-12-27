@@ -50,10 +50,13 @@ module SyncDecoder #(
 );
 
     // Edge detection registers
-    reg hsync_d, vsync_d, de_d;
-    wire hsync_active   = (hsync != hsync_idle_level);
-    wire hsync_start    = (hsync_active && !hsync_d);
-    wire hsync_end      = (!hsync_active && hsync_d);
+    reg hsync_d;
+    reg vsync_d;
+    reg de_d;
+    //reg hsync_idle_level;
+    //wire hsync_active   = (hsync != hsync_idle_level);
+    wire hsync_start    = (hsync && !hsync_d);
+    wire hsync_end      = (!hsync && hsync_d);
     wire vsync_start    = (vsync && !vsync_d);
     wire vsync_end      = (!vsync && vsync_d);
     wire de_start       = (de && !de_d);
@@ -65,8 +68,8 @@ module SyncDecoder #(
     reg [11:0] v_sync_count;
     reg [11:0] v_de_count;
     reg [11:0] v_de_start;
-    reg        line_has_de;
     reg [11:0] vsync_h_position;
+    reg        line_has_de;
 
     // Edge detection
     always @(posedge pixel_clk or negedge rst_n) begin
@@ -81,54 +84,25 @@ module SyncDecoder #(
         end
     end
     
-    // Determine idle level of HSYNC
-    reg hsync_idle_level;
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            // Default to active-low sync (idle = 1) which is standard for VGA/HDMI
-            hsync_idle_level <= 1'b1; 
-        end else if (de_start) begin
-            hsync_idle_level <= hsync_d;
-        end
-    end
+    // Determine HSYNC idle level
+    //always @(posedge pixel_clk or negedge rst_n) begin
+    //    if (!rst_n) begin
+    //        hsync_idle_level <= 1'b1; // Default to active-low sync (idle = 1) which is standard for VGA/HDMI
+    //    end else if (de_start) begin
+    //        hsync_idle_level <= hsync_d;
+    //    end
+    //end
 
-    // Horizontal pixel counter
+    // Horizontal pixel counter (good)
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
-            h_count <= 0;
-            h_total <= 0;
+            h_count <= 1'b0;
+            h_total <= 1'b0;
         end else if (hsync_end) begin
             h_total <= h_count + 1'b1;
             h_count <= 0;
         end else begin
             h_count <= h_count + 1'b1;
-        end
-    end
-    
-    // Debugging output
-    always @(posedge pixel_clk) begin
-        if (hsync_start)
-            $display("Time=%0t: HSYNC-START h_count=%0d, h_total=%0d", $time, h_count, h_total);
-        if (hsync_end)
-            $display("Time=%0t: HSYNC-END - h_sync_count=%0d",$time, h_sync_count);
-    end
-    
-    initial begin
-        $monitor("Time=%0t: hsync=%b hsync_d=%b rising=%b h_count=%0d h_total=%0d",
-        $time, hsync, hsync_d, hsync_start, h_count, h_total);
-    end
-    //--------------------
-
-    // Vertical line counter
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            v_count <= 0;
-            v_total <= 0;
-        end else if (vsync_start) begin
-            v_total <= v_count;
-            v_count <= 0;
-        end else if (hsync_start) begin
-            v_count <= v_count + 1'b1;
         end
     end
 
@@ -137,11 +111,13 @@ module SyncDecoder #(
         if (!rst_n) begin
             h_sync_count <= 0;
             h_sync_len   <= 0;
-        end else if (hsync_end) begin
-            h_sync_len   <= h_sync_count;
-            h_sync_count <= 0;
-        end else if (hsync_active) begin
-            h_sync_count <= h_sync_count + 1'b1;
+        end else begin
+            if (hsync_end) begin
+                h_sync_len   <= h_sync_count;
+                h_sync_count <= 0;
+            end else if (hsync) begin
+                h_sync_count <= h_sync_count + 1'b1;
+            end
         end
     end
 
@@ -153,14 +129,32 @@ module SyncDecoder #(
             h_active    <= 0;
             h_backporch <= 0;
         end else begin
-            if (hsync_start) begin
-                h_active    <= h_de_count;
-                h_de_count  <= 0;
-            end else if (de_start) begin
-                h_backporch <= h_count - h_sync_len;
-                h_de_start  <= h_count;
-            end else if (de) begin
-                h_de_count <= h_de_count + 1'b1;
+            if (de) begin
+                h_de_count <= h_de_count + 1'b1;  // Only count while DE is high
+            end
+
+            if (hsync_end) begin
+                h_active   <= h_de_count;
+            end
+            
+            if (de_start) begin
+                h_backporch <= h_count + 1'b1; //From hsync_end to de_start is the backporch
+                h_de_count  <= 1'b1;  // Start counting from 1 on first DE pixel
+            end
+        end
+    end
+    
+    // Vertical line counter
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            v_count <= 0;
+            v_total <= 0;
+        end else begin
+            if (vsync_start) begin
+                v_total <= v_count;
+                v_count <= 0;
+            end else if (hsync_end) begin
+                v_count <= v_count + 1'b1;
             end
         end
     end
@@ -170,11 +164,14 @@ module SyncDecoder #(
         if (!rst_n) begin
             v_sync_count <= 0;
             v_sync_len   <= 0;
-        end else if (vsync_end) begin
-            v_sync_len   <= v_sync_count;
-            v_sync_count <= 0;
-        end else if (vsync && hsync_start) begin
-            v_sync_count <= v_sync_count + 1'b1;
+        end else begin 
+            if (vsync_start) begin
+                v_sync_count <= 1'b0;
+            end else if (vsync_end) begin
+                v_sync_len   <= v_sync_count;    
+            end else if (vsync && hsync_end) begin
+                v_sync_count <= v_sync_count + 1'b1;
+            end
         end
     end
 
@@ -193,13 +190,11 @@ module SyncDecoder #(
                 line_has_de <= 1'b0;
             end else if (hsync_end) begin
                 if (line_has_de) begin
-                    v_de_count <= v_de_count + 1'b1;
-                end
-                if (de) begin
                     if (v_de_count == 0) begin
-                        v_backporch <= v_count - v_sync_len;
+                        v_backporch <= (v_count - v_sync_len) - 1'b1; // -1 bandaid solution for timing issue
                         v_de_start  <= v_count;
                     end
+                    v_de_count <= v_de_count + 1'b1;
                 end
                 line_has_de <= 1'b0;
             end else if (de) begin
@@ -209,30 +204,44 @@ module SyncDecoder #(
     end
 
     // Interlace detection - VSYNC occurs mid-line in interlaced signals
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            interlaced         <= 1'b0;
-            field_id           <= 1'b0;
-            vsync_h_position   <= 0;
-        end else if (vsync_start) begin
-            vsync_h_position <= h_count;
+    //always @(posedge pixel_clk or negedge rst_n) begin
+    //    if (!rst_n) begin
+    //        interlaced         <= 1'b0;
+    //        field_id           <= 1'b0;
+    //        vsync_h_position   <= 0;
+    //    end else if (vsync_start && h_total > 0) begin
+    //        vsync_h_position <= h_count;
             
             // Check if VSYNC occurs near half-line position
-            if ((h_count > (h_total/2 - TOLERANCE)) && 
-                (h_count < (h_total/2 + TOLERANCE))) begin
-                interlaced <= 1'b1;
-            end else if (h_count < TOLERANCE) begin
-                interlaced <= 1'b0;
-            end
+    //        if ((h_count > (h_total/2 - TOLERANCE)) && 
+    //            (h_count < (h_total/2 + TOLERANCE))) begin
+    //            interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
+    //       end else begin
+    //            interlaced <= 1'b0;  // VSYNC is at line start: progressive
+    //        end
             
-            field_id <= ~field_id; // Field ID toggles each VSYNC
-        end
-    end
+    //        field_id <= ~field_id; // Field ID toggles each VSYNC
+    //    end
+    //end
 
     // Output assignments
     assign pixel_valid  = de;
     assign pixel_data   = rgb;
     assign line_start   = hsync_start;
     assign frame_start  = vsync_start;
+
+    // Debugging output
+    //always @(posedge pixel_clk) begin
+    //    if (hsync_start)
+    //        $display("Time=%0t: HSYNC-START h_count=%0d, h_total=%0d", $time, h_count, h_total);
+    //    if (hsync_end)
+    //        $display("Time=%0t: HSYNC-END - h_sync_count=%0d",$time, h_sync_count);
+    //end
+    
+    //initial begin
+    //    $monitor("Time=%0t: hsync=%b hsync_d=%b rising=%b h_count=%0d h_total=%0d",
+    //    $time, hsync, hsync_d, hsync_start, h_count, h_total);
+    //end
+    //--------------------
 
 endmodule
