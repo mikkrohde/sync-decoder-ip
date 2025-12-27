@@ -106,19 +106,6 @@ module SyncDecoder #(
         end
     end
 
-    // Vertical line counter (good)
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            v_count <= 0;
-            v_total <= 0;
-        end else if (vsync_start) begin
-            v_total <= v_count + 1'b1;
-            v_count <= 0;
-        end else if (hsync_end) begin
-            v_count <= v_count + 1'b1;
-        end
-    end
-
     // Measure HSYNC pulse width
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -142,28 +129,31 @@ module SyncDecoder #(
             h_active    <= 0;
             h_backporch <= 0;
         end else begin
+            if (de) begin
+                h_de_count <= h_de_count + 1'b1;  // Only count while DE is high
+            end
 
             if (hsync_end) begin
                 h_active   <= h_de_count;
             end
             
             if (de_start) begin
-                h_backporch <= h_count; //From hsync_end to de_start is the backporch
-                h_de_count  <= 1'b0;  // Start counting from 1 on first DE pixel
-            end else if (de) begin
-                h_de_count <= h_de_count + 1'b1;  // Only count while DE is high
+                h_backporch <= h_count + 1'b1; //From hsync_end to de_start is the backporch
+                h_de_count  <= 1'b1;  // Start counting from 1 on first DE pixel
             end
-
-            //if (hsync_end) begin
-            //    h_active    <= h_de_count;
-            //    h_de_count  <= 0;
-            //end else if (de_start) begin
-            //    h_backporch <= h_count - h_sync_len;
-            //    h_de_start  <= h_count;
-            //    h_de_count  <= 1'b1;  // Start counting from 1 on first DE pixel
-            //end else if (de) begin
-            //    h_de_count <= h_de_count + 1'b1;  // Only count while DE is high
-            //end
+        end
+    end
+    
+    // Vertical line counter
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            v_count <= 0;
+            v_total <= 0;
+        end else if (vsync_start) begin
+            v_total <= v_count;
+            v_count <= 0;
+        end else if (hsync_end) begin
+            v_count <= v_count + 1'b1;
         end
     end
 
@@ -173,12 +163,13 @@ module SyncDecoder #(
             v_sync_count <= 0;
             v_sync_len   <= 0;
         end else begin 
-            if (vsync_end) begin
-                v_sync_len   <= v_sync_count;
+            if (vsync_start) begin
                 v_sync_count <= 1'b0;
-            end else if (vsync && hsync_start) begin
+            end else if (vsync_end) begin
+                v_sync_len   <= v_sync_count;    
+            end else if (vsync && hsync_end) begin
                 v_sync_count <= v_sync_count + 1'b1;
-            end 
+            end
         end
     end
 
@@ -211,25 +202,25 @@ module SyncDecoder #(
     end
 
     // Interlace detection - VSYNC occurs mid-line in interlaced signals
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            interlaced         <= 1'b0;
-            field_id           <= 1'b0;
-            vsync_h_position   <= 0;
-        end else if (vsync_start && h_total > 0) begin
-            vsync_h_position <= h_count;
+    //always @(posedge pixel_clk or negedge rst_n) begin
+    //    if (!rst_n) begin
+    //        interlaced         <= 1'b0;
+    //        field_id           <= 1'b0;
+    //        vsync_h_position   <= 0;
+    //    end else if (vsync_start && h_total > 0) begin
+    //        vsync_h_position <= h_count;
             
             // Check if VSYNC occurs near half-line position
-            if ((h_count > (h_total/2 - TOLERANCE)) && 
-                (h_count < (h_total/2 + TOLERANCE))) begin
-                interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
-            end else begin
-                interlaced <= 1'b0;  // VSYNC is at line start: progressive
-            end
+    //        if ((h_count > (h_total/2 - TOLERANCE)) && 
+    //            (h_count < (h_total/2 + TOLERANCE))) begin
+    //            interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
+    //       end else begin
+    //            interlaced <= 1'b0;  // VSYNC is at line start: progressive
+    //        end
             
-            field_id <= ~field_id; // Field ID toggles each VSYNC
-        end
-    end
+    //        field_id <= ~field_id; // Field ID toggles each VSYNC
+    //    end
+    //end
 
     // Output assignments
     assign pixel_valid  = de;
