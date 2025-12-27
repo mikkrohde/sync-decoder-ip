@@ -381,6 +381,11 @@ module tb_SyncDecoder;
         check_measurements(H_TOTAL_480P, H_ACTIVE_480P, H_SYNC_480P,
                         H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P,
                         V_SYNC_480P, V_BACKPORCH_480P, 1);
+                        
+        // Reset
+        repeat (10) @(posedge pixel_clk);
+        rst_n <= 1;
+        repeat (10) @(posedge pixel_clk);
         
         // ==========================================
         // Test 3: 576p PAL progressive

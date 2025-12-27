@@ -149,11 +149,13 @@ module SyncDecoder #(
         if (!rst_n) begin
             v_count <= 0;
             v_total <= 0;
-        end else if (vsync_start) begin
-            v_total <= v_count;
-            v_count <= 0;
-        end else if (hsync_end) begin
-            v_count <= v_count + 1'b1;
+        end else begin
+            if (vsync_start) begin
+                v_total <= v_count;
+                v_count <= 0;
+            end else if (hsync_end) begin
+                v_count <= v_count + 1'b1;
+            end
         end
     end
 
@@ -189,7 +191,7 @@ module SyncDecoder #(
             end else if (hsync_end) begin
                 if (line_has_de) begin
                     if (v_de_count == 0) begin
-                        v_backporch <= v_count - v_sync_len;
+                        v_backporch <= (v_count - v_sync_len) - 1'b1; // -1 bandaid solution for timing issue
                         v_de_start  <= v_count;
                     end
                     v_de_count <= v_de_count + 1'b1;
