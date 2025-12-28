@@ -53,16 +53,16 @@ module SyncDecoder #(
     reg vsync_idle_level;
     reg polarity_locked;
     wire hsync_active   = (hsync != hsync_idle_level);
-    wire hsync_active   = (vsync != vsync_idle_level);
+    wire vsync_active   = (vsync != vsync_idle_level);
     
     reg hsync_d;
     reg vsync_d;
     reg de_d;
-    wire hsync_start    = (hsync && !hsync_d);
-    wire hsync_end      = (!hsync && hsync_d);
-    wire vsync_start    = (vsync && !vsync_d);
-    wire vsync_end      = (!vsync && vsync_d);
-    wire de_start       = (de && !de_d);
+    wire hsync_start = (hsync != hsync_idle_level) && (hsync_d == hsync_idle_level);
+    wire hsync_end   = (hsync == hsync_idle_level) && (hsync_d != hsync_idle_level);
+    wire vsync_start = (vsync != vsync_idle_level) && (vsync_d == vsync_idle_level);
+    wire vsync_end   = (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
+    wire de_start    = (de && !de_d);
 
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -94,17 +94,14 @@ module SyncDecoder #(
             vsync_idle_level <= 1'b1;
             polarity_locked <= 1'b0;
         end else begin
-            if (de && !polarity_locked) begin
+            if (!de && !polarity_locked) begin
                 hsync_idle_level <= hsync;
                 vsync_idle_level <= vsync;
             end
-
-            if (de_start && h_count > 100) begin
+            
+            // Lock polarity after first VSYNC detection
+            if (vsync_start) begin
                 polarity_locked <= 1'b1;
-            end
-
-            if (h_total == 0 || v_total == 0) begin
-                polarity_locked <= 1'b0;
             end
         end
     end

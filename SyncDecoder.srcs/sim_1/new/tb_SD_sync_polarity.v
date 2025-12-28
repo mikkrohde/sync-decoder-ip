@@ -89,10 +89,9 @@ module tb_SD_sync_polarity;
         input hsync_polarity;  // 0 = active-low, 1 = active-high
         input vsync_polarity;  // 0 = active-low, 1 = active-high
         input integer num_lines;
+        integer h_pos, v_pos;
+        reg hsync_raw, vsync_raw;
         begin
-            integer h_pos, v_pos;
-            reg hsync_raw, vsync_raw;
-            
             for (v_pos = 0; v_pos < num_lines; v_pos = v_pos + 1) begin
                 for (h_pos = 0; h_pos < H_TOTAL; h_pos = h_pos + 1) begin
                     
