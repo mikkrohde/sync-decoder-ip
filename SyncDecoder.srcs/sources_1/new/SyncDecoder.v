@@ -48,13 +48,16 @@ module SyncDecoder #(
     output wire         line_start,
     output wire         frame_start
 );
-
-    // Edge detection registers
+    
+    reg hsync_idle_level;
+    reg vsync_idle_level;
+    reg polarity_locked;
+    wire hsync_active   = (hsync != hsync_idle_level);
+    wire hsync_active   = (vsync != vsync_idle_level);
+    
     reg hsync_d;
     reg vsync_d;
     reg de_d;
-    //reg hsync_idle_level;
-    //wire hsync_active   = (hsync != hsync_idle_level);
     wire hsync_start    = (hsync && !hsync_d);
     wire hsync_end      = (!hsync && hsync_d);
     wire vsync_start    = (vsync && !vsync_d);
@@ -83,17 +86,30 @@ module SyncDecoder #(
             de_d    <= de;
         end
     end
-    
-    // Determine HSYNC idle level
-    //always @(posedge pixel_clk or negedge rst_n) begin
-    //    if (!rst_n) begin
-    //        hsync_idle_level <= 1'b1; // Default to active-low sync (idle = 1) which is standard for VGA/HDMI
-    //    end else if (de_start) begin
-    //        hsync_idle_level <= hsync_d;
-    //    end
-    //end
 
-    // Horizontal pixel counter (good)
+    // Determine HSYNC & VSYNC idle level
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            hsync_idle_level <= 1'b1;
+            vsync_idle_level <= 1'b1;
+            polarity_locked <= 1'b0;
+        end else begin
+            if (de && !polarity_locked) begin
+                hsync_idle_level <= hsync;
+                vsync_idle_level <= vsync;
+            end
+
+            if (de_start && h_count > 100) begin
+                polarity_locked <= 1'b1;
+            end
+
+            if (h_total == 0 || v_total == 0) begin
+                polarity_locked <= 1'b0;
+            end
+        end
+    end
+
+    // Horizontal pixel counter
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             h_count <= 1'b0;
