@@ -3,18 +3,18 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 28.12.2025 01:03:02
+// Create Date: 28.12.2025 11:27:57
 // Design Name: 
 // Module Name: tb_SD_interlace_detection
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
-// Description: 
+// Description: Testbench for interlace detection
 // 
 // Dependencies: 
 // 
 // Revision:
-// Revision 0.01 - File Created
+// Revision 1.0 - File Created
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
@@ -95,6 +95,7 @@ module tb_SD_interlace_detection;
     end
 
     // Test variables
+    integer preamble;
     integer h_pos, v_pos;
     integer field_count;
     integer pixel_count;
@@ -103,6 +104,7 @@ module tb_SD_interlace_detection;
     // Task: Generate one interlaced field
     task generate_interlaced_field;
         input field_type;  // 0 = even/first field, 1 = odd/second field
+        integer display_line;
         begin
             pixel_count = 0;
             
@@ -147,7 +149,6 @@ module tb_SD_interlace_detection;
                         (v_pos < V_SYNC_480I + V_BACKPORCH_480I + V_ACTIVE_480I)) begin
                         
                         // Calculate which display line this would be
-                        integer display_line;
                         display_line = v_pos - (V_SYNC_480I + V_BACKPORCH_480I);
                         
                         // Only show lines that match this field's parity
@@ -198,10 +199,10 @@ module tb_SD_interlace_detection;
         $display("SyncDecoder Interlaced Detection Test");
         $display("========================================");
         
-        // Initialize
+        // Initialize - IMPORTANT: Start with idle levels
         rst_n = 0;
-        hsync = 0;
-        vsync = 0;
+        hsync = 1'b0;  // Idle low
+        vsync = 1'b0;  // Idle low
         de = 0;
         rgb = 24'h000000;
         field_count = 0;
@@ -210,12 +211,24 @@ module tb_SD_interlace_detection;
         // Reset
         repeat (10) @(posedge pixel_clk);
         rst_n = 1;
-        repeat (10) @(posedge pixel_clk);
+        repeat (10) @(posedge pixel_clk);  // Increased from 10
+        
+        $display("Generating preamble HSYNC pulses...");
+        // Generate several complete lines to let decoder lock onto timing
+        for (preamble = 0; preamble < 5; preamble = preamble + 1) begin
+            for (h_pos = 0; h_pos < H_TOTAL_480I; h_pos = h_pos + 1) begin
+                hsync = (h_pos < H_SYNC_480I) ? 1'b1 : 1'b0;
+                vsync = 1'b0;
+                de = 1'b0;
+                rgb = 24'h000000;
+                @(posedge pixel_clk);
+            end
+        end
         
         $display("\n>>> TEST: 480i NTSC Interlaced");
         $display("Expecting:");
-        $display("  - First field: VSYNC at h_count ≈ 0");
-        $display("  - Second field: VSYNC at h_count ≈ %0d (half-line)", H_TOTAL_480I/2);
+        $display("  - First field: VSYNC at h_count ~= 0");
+        $display("  - Second field: VSYNC at h_count ~= %0d (half-line)", H_TOTAL_480I/2);
         $display("  - Interlaced flag should be 1");
         
         // Generate several fields

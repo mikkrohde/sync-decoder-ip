@@ -38,6 +38,19 @@ module tb_SyncDecoder;
     localparam V_BACKPORCH_480P     = 33;
     localparam V_TOTAL_480P         = 525;
     
+    // 480I timing (640x450 @ 60hz VGA - NTSC)
+    localparam H_ACTIVE_480I        = 640;
+    localparam H_FRONTPORCH_480I    = 16;
+    localparam H_SYNC_480I          = 64;
+    localparam H_BACKPORCH_480I     = 80;
+    localparam H_TOTAL_480I         = 800;
+
+    localparam V_ACTIVE_480I        = 240;
+    localparam V_FRONTPORCH_480I    = 3;
+    localparam V_SYNC_480I          = 4;
+    localparam V_BACKPORCH_480I     = 14;
+    localparam V_TOTAL_480I         = 261.5;
+    
     // 720p timing (simplified)
     localparam H_ACTIVE_720P        = 1280;
     localparam H_FRONTPORCH_720P    = 110;
@@ -63,6 +76,20 @@ module tb_SyncDecoder;
     localparam V_SYNC_576P          = 5;
     localparam V_BACKPORCH_576P     = 39;
     localparam V_TOTAL_576P         = 625;
+
+    //576i timing (720x576 @ 50Hz - PAL)
+    localparam H_ACTIVE_576I        = 720;
+    localparam H_FRONTPORCH_576I    = 12;
+    localparam H_SYNC_576I          = 64;
+    localparam H_BACKPORCH_576I     = 68;
+    localparam H_TOTAL_576I         = 864;
+
+    localparam V_ACTIVE_576I        = 288;
+    localparam V_FRONTPORCH_576I    = 3;
+    localparam V_SYNC_576I          = 5;
+    localparam V_BACKPORCH_576I     = 19;
+    localparam V_TOTAL_576I         = 312.5;
+
 
     // DUT signals
     reg         pixel_clk;
@@ -91,7 +118,9 @@ module tb_SyncDecoder;
 
     // Instantiate DUT
     SyncDecoder #(
-        .TOLERANCE(4)
+        .TOLERANCE(4),
+        .STABILITY_COUNT(1),
+        .ENABLE_INTERLACE_DETECTION(1)
     ) dut (
         .pixel_clk(pixel_clk),
         .rst_n(rst_n),
@@ -172,16 +201,16 @@ module tb_SyncDecoder;
                         $display("\n=== Generating 720p (HD) Frame ===");
                 end
                 TEST_480I: begin
-                    h_total_cfg = H_TOTAL_480P;
-                    h_active_cfg = H_ACTIVE_480P;
-                    h_sync_cfg = H_SYNC_480P;
-                    h_frontporch_cfg = H_FRONTPORCH_480P;
-                    h_backporch_cfg = H_BACKPORCH_480P;
-                    v_total_cfg = V_TOTAL_480P;
-                    v_active_cfg = V_ACTIVE_480P;
-                    v_sync_cfg = V_SYNC_480P;
-                    v_frontporch_cfg = V_FRONTPORCH_480P;
-                    v_backporch_cfg = V_BACKPORCH_480P;
+                    h_total_cfg = H_TOTAL_480I;
+                    h_active_cfg = H_ACTIVE_480I;
+                    h_sync_cfg = H_SYNC_480I;
+                    h_frontporch_cfg = H_FRONTPORCH_480I;
+                    h_backporch_cfg = H_BACKPORCH_480I;
+                    v_total_cfg = V_TOTAL_480I;
+                    v_active_cfg = V_ACTIVE_480I;
+                    v_sync_cfg = V_SYNC_480I;
+                    v_frontporch_cfg = V_FRONTPORCH_480I;
+                    v_backporch_cfg = V_BACKPORCH_480I;
                     interlaced_mode = 1;
                     if (frame_count == 0)
                         $display("\n=== Generating 480i (NTSC) Field ===");
@@ -202,16 +231,16 @@ module tb_SyncDecoder;
                         $display("\n=== Generating 576p (PAL) Frame ===");
                 end
                 TEST_576I: begin
-                    h_total_cfg = H_TOTAL_576P;
-                    h_active_cfg = H_ACTIVE_576P;
-                    h_sync_cfg = H_SYNC_576P;
-                    h_frontporch_cfg = H_FRONTPORCH_576P;
-                    h_backporch_cfg = H_BACKPORCH_576P;
-                    v_total_cfg = V_TOTAL_576P;
-                    v_active_cfg = V_ACTIVE_576P;
-                    v_sync_cfg = V_SYNC_576P;
-                    v_frontporch_cfg = V_FRONTPORCH_576P;
-                    v_backporch_cfg = V_BACKPORCH_576P;
+                    h_total_cfg = H_TOTAL_576I;
+                    h_active_cfg = H_ACTIVE_576I;
+                    h_sync_cfg = H_SYNC_576I;
+                    h_frontporch_cfg = H_FRONTPORCH_576I;
+                    h_backporch_cfg = H_BACKPORCH_576I;
+                    v_total_cfg = V_TOTAL_576I;
+                    v_active_cfg = V_ACTIVE_576I;
+                    v_sync_cfg = V_SYNC_576I;
+                    v_frontporch_cfg = V_FRONTPORCH_576I;
+                    v_backporch_cfg = V_BACKPORCH_576I;
                     interlaced_mode = 1;
                     if (frame_count == 0)
                         $display("\n=== Generating 576i (PAL) Field ===");
@@ -378,9 +407,9 @@ module tb_SyncDecoder;
         
         repeat (10) @(posedge pixel_clk);
         
-        check_measurements(H_TOTAL_480P, H_ACTIVE_480P, H_SYNC_480P,
-                        H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P,
-                        V_SYNC_480P, V_BACKPORCH_480P, 1);
+        check_measurements(H_TOTAL_480I, H_ACTIVE_480I, H_SYNC_480I,
+                        H_BACKPORCH_480I, V_TOTAL_480I, V_ACTIVE_480I,
+                        V_SYNC_480I, V_BACKPORCH_480I, 1);
                         
         // Reset
         repeat (10) @(posedge pixel_clk);
@@ -425,10 +454,10 @@ module tb_SyncDecoder;
         repeat (2) generate_frame(TEST_576I);
         
         repeat (10) @(posedge pixel_clk);
-        
-        check_measurements(H_TOTAL_576P, H_ACTIVE_576P, H_SYNC_576P,
-                        H_BACKPORCH_576P, V_TOTAL_576P, V_ACTIVE_576P,
-                        V_SYNC_576P, V_BACKPORCH_576P, 1);
+
+        check_measurements(H_TOTAL_576I, H_ACTIVE_576I, H_SYNC_576I,
+                        H_BACKPORCH_576I, V_TOTAL_576I, V_ACTIVE_576I,
+                        V_SYNC_576I, V_BACKPORCH_576I, 1);
                         
         // Reset
         repeat (10) @(posedge pixel_clk);

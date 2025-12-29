@@ -15,7 +15,9 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 module SyncDecoder #(
-    parameter TOLERANCE = 4  // Tolerance for interlace detection
+    parameter TOLERANCE = 4,  // Tolerance for interlace detection
+    parameter STABILITY_COUNT = 3, // Number of consistent frames before locking timing
+    parameter ENABLE_INTERLACE_DETECTION = 1 // Enable interlace detection logic
 )(
     input  wire         pixel_clk,
     input  wire         rst_n,
@@ -49,21 +51,30 @@ module SyncDecoder #(
     output wire         frame_start
 );
     
-    reg hsync_idle_level;
-    reg vsync_idle_level;
-    reg polarity_locked;
-    wire hsync_active   = (hsync != hsync_idle_level);
-    wire vsync_active   = (vsync != vsync_idle_level);
+    //reg hsync_idle_level;
+    //reg vsync_idle_level;
+    //reg polarity_locked;
+    //wire hsync_active   = (hsync != hsync_idle_level);
+    //wire vsync_active   = (vsync != vsync_idle_level);
     
     reg hsync_d;
     reg vsync_d;
     reg de_d;
-    wire hsync_start = (hsync != hsync_idle_level) && (hsync_d == hsync_idle_level);
-    wire hsync_end   = (hsync == hsync_idle_level) && (hsync_d != hsync_idle_level);
-    wire vsync_start = (vsync != vsync_idle_level) && (vsync_d == vsync_idle_level);
-    wire vsync_end   = (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
-    wire de_start    = (de && !de_d);
+    //wire hsync_start = (hsync != hsync_idle_level) && (hsync_d == hsync_idle_level);
+    //wire hsync_end   = (hsync == hsync_idle_level) && (hsync_d != hsync_idle_level);
+    //wire vsync_start = (vsync != vsync_idle_level) && (vsync_d == vsync_idle_level);
+    //wire vsync_end   = (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
+    //wire de_start    = (de && !de_d);
 
+    wire hsync_start    = (hsync && !hsync_d);
+    wire hsync_end      = (!hsync && hsync_d);
+    wire vsync_start    = (vsync && !vsync_d);
+    wire vsync_end      = (!vsync && vsync_d);
+    wire de_start       = (de && !de_d);
+    wire is_vsync_mid_line  =   (h_count > (h_total >> 2) - TOLERANCE) &&     
+                                (h_count < (h_total - (h_total >> 2) + TOLERANCE)) && 
+                                vsync_start;
+    
     // Measurement registers
     reg [11:0] h_sync_count;
     reg [11:0] h_de_count;
@@ -88,23 +99,23 @@ module SyncDecoder #(
     end
 
     // Determine HSYNC & VSYNC idle level
-    always @(posedge pixel_clk or negedge rst_n) begin
-        if (!rst_n) begin
-            hsync_idle_level <= 1'b1;
-            vsync_idle_level <= 1'b1;
-            polarity_locked <= 1'b0;
-        end else begin
-            if (!de && !polarity_locked) begin
-                hsync_idle_level <= hsync;
-                vsync_idle_level <= vsync;
-            end
-            
-            // Lock polarity after first VSYNC detection
-            if (vsync_start) begin
-                polarity_locked <= 1'b1;
-            end
-        end
-    end
+    //always @(posedge pixel_clk or negedge rst_n) begin
+    //    if (!rst_n) begin
+    //        hsync_idle_level <= 1'b1;
+    //        vsync_idle_level <= 1'b1;
+    //        polarity_locked <= 1'b0;
+    //    end else begin
+    //        if (!de && !polarity_locked) begin
+    //            hsync_idle_level <= hsync;
+    //            vsync_idle_level <= vsync;
+    //        end
+    //        
+    //        // Lock polarity after first VSYNC detection
+    //        if (vsync_start) begin
+    //            polarity_locked <= 1'b1;
+    //        end
+    //    end
+    //end
 
     // Horizontal pixel counter
     always @(posedge pixel_clk or negedge rst_n) begin
@@ -217,25 +228,39 @@ module SyncDecoder #(
     end
 
     // Interlace detection - VSYNC occurs mid-line in interlaced signals
-    //always @(posedge pixel_clk or negedge rst_n) begin
-    //    if (!rst_n) begin
-    //        interlaced         <= 1'b0;
-    //        field_id           <= 1'b0;
-    //        vsync_h_position   <= 0;
-    //    end else if (vsync_start && h_total > 0) begin
-    //        vsync_h_position <= h_count;
-            
-            // Check if VSYNC occurs near half-line position
-    //        if ((h_count > (h_total/2 - TOLERANCE)) && 
-    //            (h_count < (h_total/2 + TOLERANCE))) begin
-    //            interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
-    //       end else begin
-    //            interlaced <= 1'b0;  // VSYNC is at line start: progressive
-    //        end
-            
-    //        field_id <= ~field_id; // Field ID toggles each VSYNC
-    //    end
-    //end
+    generate
+        reg [3:0] interlace_confidence;
+        if (ENABLE_INTERLACE_DETECTION) begin
+            always @(posedge pixel_clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    interlaced         <= 1'b0;
+                    field_id           <= 1'b0;
+                    interlace_confidence <= 0;
+                end else if (vsync_start) begin
+                    if (is_vsync_mid_line) begin
+                        if (interlace_confidence < STABILITY_COUNT) begin
+                            interlace_confidence <= interlace_confidence + 1'b1;
+                        end
+                    end else begin
+                        if (interlace_confidence > 0) begin
+                            interlace_confidence <= interlace_confidence - 1'b1;
+                        end
+                    end
+                    
+                    if (interlace_confidence >= STABILITY_COUNT) begin
+                        interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
+                    end else begin
+                        interlaced <= 1'b0;  // VSYNC is at line start: progressive
+                    end
+
+                    if (is_vsync_mid_line) begin
+                        field_id <= ~field_id; // Toggle field ID on mid-line VSYNC    
+                    end
+                end
+            end
+        end
+    endgenerate
+    
 
     // Output assignments
     assign pixel_valid  = de;
