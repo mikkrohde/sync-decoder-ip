@@ -25,7 +25,20 @@ module SyncDecoder #(
     input  wire         vsync,        // Vertical sync pulse
     input  wire         de,           // Data enable (optional) - added for compatibilty with analog frontends
     input  wire [23:0]  rgb,          // Pixel data
+
+    // Configuration inputs
+    input wire [11:0]   cfg_h_active_width,   // Expected active width
+    input wire [11:0]   cfg_h_sync_width,     // Expected HSYNC width (For noise filtering)
+    input wire [11:0]   cfg_h_backporch,      // Expected H Backporch (For aligning image if no DE)
     
+    input wire [11:0]   cfg_v_active_lines,   // Expected active lines
+    input wire [11:0]   cfg_v_sync_width,     // Expected VSYNC width
+    input wire [11:0]   cfg_v_backporch,      // Expected V Backporch (For aligning image)
+    
+    input wire          cfg_force_interlaced,  // 1 = Force Interlaced mode (override detection)
+    input wire          cfg_force_progressive, // 1 = Force Progressive mode (override detection)
+    input wire          cfg_ignore_de,         // 1 = Ignore hardware DE, generate internally using cfg values
+
     // Detected timing parameters
     output reg [11:0]   h_total,       // Total pixels per line
     output reg [11:0]   h_active,      // Active pixels per line
@@ -71,9 +84,22 @@ module SyncDecoder #(
     wire vsync_start    = (vsync && !vsync_d);
     wire vsync_end      = (!vsync && vsync_d);
     wire de_start       = (de && !de_d);
-    wire is_vsync_mid_line  =   (h_count > (h_total >> 2) - TOLERANCE) &&     
-                                (h_count < (h_total - (h_total >> 2) + TOLERANCE)) && 
-                                vsync_start;
+    
+    wire internal_h_active  = (h_count >= h_sync_len + cfg_h_backporch) && 
+                              (h_count <  h_sync_len + cfg_h_backporch + cfg_h_active_width);
+    
+    //reg [11:0] vsync_h_pos;
+    //always @(posedge pixel_clk or negedge rst_n) begin
+    //    if (!rst_n) begin
+    //        vsync_h_pos <= 0;
+    //    end else if (vsync && !vsync_d) begin
+    //        // Capture h_count at the exact moment VSYNC goes high
+    //        vsync_h_pos <= h_count;
+    //    end
+    //end
+    
+    wire is_vsync_mid_line  = (h_count > ((h_total >> 1) - h_sync_len) - TOLERANCE) &&     
+                              (h_count < ((h_total >> 1) - h_sync_len) + TOLERANCE);
     
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -215,7 +241,7 @@ module SyncDecoder #(
             end else if (hsync_end) begin
                 if (line_has_de) begin
                     if (v_de_count == 0) begin
-                        v_backporch <= (v_count - v_sync_len) - 1'b1; // -1 bandaid solution for timing issue
+                        v_backporch <= v_count - v_sync_len; // -1 bandaid solution for timing issue
                         v_de_start  <= v_count;
                     end
                     v_de_count <= v_de_count + 1'b1;
@@ -226,35 +252,74 @@ module SyncDecoder #(
             end
         end
     end
-
+    
+    // ---------------------------------------------------------
     // Interlace detection - VSYNC occurs mid-line in interlaced signals
+    // ---------------------------------------------------------
     generate
-        reg [3:0] interlace_confidence;
-        if (ENABLE_INTERLACE_DETECTION) begin
+        if (ENABLE_INTERLACE_DETECTION) begin : gen_interlace_logic
+            reg auto_interlaced;
+            reg [3:0] interlace_confidence;
             always @(posedge pixel_clk or negedge rst_n) begin
                 if (!rst_n) begin
                     interlaced         <= 1'b0;
                     field_id           <= 1'b0;
-                    interlace_confidence <= 0;
+                    interlace_confidence <= 4'b0;
                 end else if (vsync_start) begin
+                    // Update Confidence
                     if (is_vsync_mid_line) begin
-                        if (interlace_confidence < STABILITY_COUNT) begin
+                        if (interlace_confidence < STABILITY_COUNT)
                             interlace_confidence <= interlace_confidence + 1'b1;
-                        end
                     end else begin
-                        if (interlace_confidence > 0) begin
+                        if (interlace_confidence > 0)
                             interlace_confidence <= interlace_confidence - 1'b1;
-                        end
-                    end
-                    
-                    if (interlace_confidence >= STABILITY_COUNT) begin
-                        interlaced <= 1'b1;  // VSYNC is mid-line: interlaced
-                    end else begin
-                        interlaced <= 1'b0;  // VSYNC is at line start: progressive
                     end
 
-                    if (is_vsync_mid_line) begin
-                        field_id <= ~field_id; // Toggle field ID on mid-line VSYNC    
+                    // Determine "Auto" State
+                    if (interlace_confidence >= STABILITY_COUNT) begin
+                        auto_interlaced <= 1'b1;
+                    end else if (interlace_confidence == 0) begin
+                        auto_interlaced <= 1'b0;
+                    end else begin
+                        auto_interlaced <= interlaced;
+                    end
+                    
+                    // Force/Override Logic
+                    if (cfg_force_interlaced) begin
+                        interlaced <= 1'b1;
+                    end else if (cfg_force_progressive) begin
+                        interlaced <= 1'b0;
+                    end else begin
+                        interlaced <= auto_interlaced;
+                    end
+
+                    if (interlaced || cfg_force_interlaced) begin
+                        if (is_vsync_mid_line) begin
+                            field_id <= 1'b1;
+                        end else begin
+                            field_id <= 1'b0;
+                        end
+                    end else begin
+                        field_id <= 1'b0; // Progressive mode, always field 0
+                    end
+                end
+            end
+        end else begin : gen_no_interlace
+            // When interlace detection is disabled
+            always @(posedge pixel_clk or negedge rst_n) begin
+                if (!rst_n) begin
+                    interlaced           <= 1'b0;
+                    field_id             <= 1'b0;
+                end else begin
+                    if (cfg_force_interlaced) begin
+                        interlaced <= 1'b1;
+                        // In forced mode without detection, toggle field on each VSYNC
+                        if (vsync_start) begin
+                            field_id <= ~field_id;
+                        end
+                    end else if (cfg_force_progressive) begin
+                        interlaced <= 1'b0;
+                        field_id   <= 1'b0;
                     end
                 end
             end
@@ -263,7 +328,7 @@ module SyncDecoder #(
     
 
     // Output assignments
-    assign pixel_valid  = de;
+    assign pixel_valid = (cfg_ignore_de) ? internal_h_active : de;
     assign pixel_data   = rgb;
     assign line_start   = hsync_start;
     assign frame_start  = vsync_start;
