@@ -129,7 +129,7 @@ module tb_SyncDecoder;
     // Instantiate DUT
     SyncDecoder #(
         .TOLERANCE(4),
-        .STABILITY_COUNT(1),
+        .STABILITY_COUNT(2),
         .ENABLE_INTERLACE_DETECTION(1)
     ) dut (
         .pixel_clk(pixel_clk),
@@ -476,11 +476,12 @@ module tb_SyncDecoder;
         repeat (10) @(posedge pixel_clk);
         
         test_mode = TEST_480I;
-        repeat (4) generate_frame(TEST_480I);  // Two fields
+        repeat (10) generate_frame(TEST_480I);  // Two fields
         ///// Fix generation frame for interlaced since there should be two vsync withing 480 vertical lines
         ///// Currently there is just a higher frequency signal i.e. 2x 480 vertical lines instead of 2x 240 :/
+        ///// the issue there is is that for the interlaced, the vertical counter is reset
         $display("Stabilizing measurements...");
-        repeat (2) generate_frame(TEST_480I);  // Two more fields to stabilize
+        repeat (5) generate_frame(TEST_480I);  // Two more fields to stabilize
         
         repeat (10) @(posedge pixel_clk);
         
@@ -549,7 +550,7 @@ module tb_SyncDecoder;
         repeat (10) @(posedge pixel_clk);
         
         test_mode = TEST_720P;
-        repeat (2) generate_frame(TEST_720P);
+        repeat (10) generate_frame(TEST_720P);
         
         $display("Stabilizing measurements...");
         generate_frame(TEST_720P);
