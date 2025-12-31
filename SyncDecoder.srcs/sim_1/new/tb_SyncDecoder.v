@@ -38,6 +38,19 @@ module tb_SyncDecoder;
     localparam V_BACKPORCH_480P     = 33;
     localparam V_TOTAL_480P         = 525;
     
+    // 480I timing (640x450 @ 60hz VGA - NTSC)
+    localparam H_ACTIVE_480I        = 640;
+    localparam H_FRONTPORCH_480I    = 16;
+    localparam H_SYNC_480I          = 64;
+    localparam H_BACKPORCH_480I     = 80;
+    localparam H_TOTAL_480I         = 800;
+
+    localparam V_ACTIVE_480I        = 240;
+    localparam V_FRONTPORCH_480I    = 3;
+    localparam V_SYNC_480I          = 4;
+    localparam V_BACKPORCH_480I     = 14;
+    localparam V_TOTAL_480I         = 261.5;
+    
     // 720p timing (simplified)
     localparam H_ACTIVE_720P        = 1280;
     localparam H_FRONTPORCH_720P    = 110;
@@ -64,6 +77,20 @@ module tb_SyncDecoder;
     localparam V_BACKPORCH_576P     = 39;
     localparam V_TOTAL_576P         = 625;
 
+    //576i timing (720x576 @ 50Hz - PAL)
+    localparam H_ACTIVE_576I        = 720;
+    localparam H_FRONTPORCH_576I    = 12;
+    localparam H_SYNC_576I          = 64;
+    localparam H_BACKPORCH_576I     = 68;
+    localparam H_TOTAL_576I         = 864;
+
+    localparam V_ACTIVE_576I        = 288;
+    localparam V_FRONTPORCH_576I    = 3;
+    localparam V_SYNC_576I          = 5;
+    localparam V_BACKPORCH_576I     = 19;
+    localparam V_TOTAL_576I         = 312.5;
+
+
     // DUT signals
     reg         pixel_clk;
     reg         rst_n;
@@ -71,6 +98,16 @@ module tb_SyncDecoder;
     reg         vsync;
     reg         de;
     reg [23:0]  rgb;
+
+    reg [11:0]   decode_h_active_width;       // Expected active width
+    reg [11:0]   decode_h_sync_width;         // Expected HSYNC width (For noise filtering)
+    reg [11:0]   decode_h_backporch;          // Expected H Backporch (For aligning image if no DE)
+    reg [11:0]   decode_v_active_lines;       // Expected active lines
+    reg [11:0]   decode_v_sync_width;         // Expected VSYNC width
+    reg [11:0]   decode_v_backporch;          // Expected V Backporch (For aligning image)
+    reg          decode_force_interlaced;     // 1 = Force Interlaced mode (override detection)
+    reg          decode_force_progressive;    // 1 = Force Progressive mode (override detection)
+    reg          decode_ignore_de;  
     
     wire [11:0] h_total;
     wire [11:0] h_active;
@@ -91,7 +128,9 @@ module tb_SyncDecoder;
 
     // Instantiate DUT
     SyncDecoder #(
-        .TOLERANCE(4)
+        .TOLERANCE(4),
+        .STABILITY_COUNT(2),
+        .ENABLE_INTERLACE_DETECTION(1)
     ) dut (
         .pixel_clk(pixel_clk),
         .rst_n(rst_n),
@@ -99,6 +138,15 @@ module tb_SyncDecoder;
         .vsync(vsync),
         .de(de),
         .rgb(rgb),
+        .cfg_h_active_width(decode_h_active_width),   // Expected active width
+        .cfg_h_sync_width(decode_h_sync_width),     // Expected HSYNC width (For noise filtering)
+        .cfg_h_backporch(decode_h_backporch),      // Expected H Backporch (For aligning image if no DE)
+        .cfg_v_active_lines(decode_v_active_lines),   // Expected active lines
+        .cfg_v_sync_width(decode_v_sync_width),     // Expected VSYNC width
+        .cfg_v_backporch(decode_v_backporch),      // Expected V Backporch (For aligning image)
+        .cfg_force_interlaced(decode_force_interlaced),  // 1 = Force Interlaced mode (override detection)
+        .cfg_force_progressive(decode_force_progressive), // 1 = Force Progressive mode (override detection)
+        .cfg_ignore_de(decode_ignore_de),  
         .h_total(h_total),
         .h_active(h_active),
         .h_sync_len(h_sync_len),
@@ -142,77 +190,132 @@ module tb_SyncDecoder;
             // Set timing parameters based on mode
             case (mode)
                 TEST_480P: begin
-                    h_total_cfg = H_TOTAL_480P;
-                    h_active_cfg = H_ACTIVE_480P;
-                    h_sync_cfg = H_SYNC_480P;
-                    h_frontporch_cfg = H_FRONTPORCH_480P;
-                    h_backporch_cfg = H_BACKPORCH_480P;
-                    v_total_cfg = V_TOTAL_480P;
-                    v_active_cfg = V_ACTIVE_480P;
-                    v_sync_cfg = V_SYNC_480P;
-                    v_frontporch_cfg = V_FRONTPORCH_480P;
-                    v_backporch_cfg = V_BACKPORCH_480P;
-                    interlaced_mode = 0;
+                    h_total_cfg                 = H_TOTAL_480P;
+                    h_active_cfg                = H_ACTIVE_480P;
+                    h_sync_cfg                  = H_SYNC_480P;
+                    h_frontporch_cfg            = H_FRONTPORCH_480P;
+                    h_backporch_cfg             = H_BACKPORCH_480P;
+                    v_total_cfg                 = V_TOTAL_480P;
+                    v_active_cfg                = V_ACTIVE_480P;
+                    v_sync_cfg                  = V_SYNC_480P;
+                    v_frontporch_cfg            = V_FRONTPORCH_480P;
+                    v_backporch_cfg             = V_BACKPORCH_480P;
+                    interlaced_mode             = 0;
+
+                    decode_h_active_width       = H_ACTIVE_480P;       // Expected active width
+                    decode_h_sync_width         = H_SYNC_480P;         // Expected HSYNC width (For noise filtering)
+                    decode_h_backporch          = H_BACKPORCH_480P;          // Expected H Backporch (For aligning image if no DE)
+                    decode_v_active_lines       = V_ACTIVE_480P;       // Expected active lines
+                    decode_v_sync_width         = V_SYNC_480P;         // Expected VSYNC width
+                    decode_v_backporch          = V_BACKPORCH_480P;          // Expected V Backporch (For aligning image)
+                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
+                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_ignore_de            = 1'b0;
+
+
+
                     if (frame_count == 0)
                         $display("\n=== Generating 480p (NTSC) Frame ===");
                 end
                 TEST_720P: begin
-                    h_total_cfg = H_TOTAL_720P;
-                    h_active_cfg = H_ACTIVE_720P;
-                    h_sync_cfg = H_SYNC_720P;
-                    h_frontporch_cfg = H_FRONTPORCH_720P;
-                    h_backporch_cfg = H_BACKPORCH_720P;
-                    v_total_cfg = V_TOTAL_720P;
-                    v_active_cfg = V_ACTIVE_720P;
-                    v_sync_cfg = V_SYNC_720P;
-                    v_frontporch_cfg = V_FRONTPORCH_720P;
-                    v_backporch_cfg = V_BACKPORCH_720P;
-                    interlaced_mode = 0;
+                    h_total_cfg                 = H_TOTAL_720P;
+                    h_active_cfg                = H_ACTIVE_720P;
+                    h_sync_cfg                  = H_SYNC_720P;
+                    h_frontporch_cfg            = H_FRONTPORCH_720P;
+                    h_backporch_cfg             = H_BACKPORCH_720P;
+                    v_total_cfg                 = V_TOTAL_720P;
+                    v_active_cfg                = V_ACTIVE_720P;
+                    v_sync_cfg                  = V_SYNC_720P;
+                    v_frontporch_cfg            = V_FRONTPORCH_720P;
+                    v_backporch_cfg             = V_BACKPORCH_720P;
+                    interlaced_mode             = 0;
+
+                    decode_h_active_width       = H_ACTIVE_720P;       // Expected active width
+                    decode_h_sync_width         = H_SYNC_720P;         // Expected HSYNC width (For noise filtering)
+                    decode_h_backporch          = H_BACKPORCH_720P;          // Expected H Backporch (For aligning image if no DE)
+                    decode_v_active_lines       = V_ACTIVE_720P;       // Expected active lines
+                    decode_v_sync_width         = V_SYNC_720P;         // Expected VSYNC width
+                    decode_v_backporch          = V_BACKPORCH_720P;          // Expected V Backporch (For aligning image)
+                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
+                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_ignore_de            = 1'b0;
+
                     if (frame_count == 0)
                         $display("\n=== Generating 720p (HD) Frame ===");
                 end
                 TEST_480I: begin
-                    h_total_cfg = H_TOTAL_480P;
-                    h_active_cfg = H_ACTIVE_480P;
-                    h_sync_cfg = H_SYNC_480P;
-                    h_frontporch_cfg = H_FRONTPORCH_480P;
-                    h_backporch_cfg = H_BACKPORCH_480P;
-                    v_total_cfg = V_TOTAL_480P;
-                    v_active_cfg = V_ACTIVE_480P;
-                    v_sync_cfg = V_SYNC_480P;
-                    v_frontporch_cfg = V_FRONTPORCH_480P;
-                    v_backporch_cfg = V_BACKPORCH_480P;
-                    interlaced_mode = 1;
+                    h_total_cfg                 = H_TOTAL_480I;
+                    h_active_cfg                = H_ACTIVE_480I;
+                    h_sync_cfg                  = H_SYNC_480I;
+                    h_frontporch_cfg            = H_FRONTPORCH_480I;
+                    h_backporch_cfg             = H_BACKPORCH_480I;
+                    v_total_cfg                 = V_TOTAL_480I;
+                    v_active_cfg                = V_ACTIVE_480I;
+                    v_sync_cfg                  = V_SYNC_480I;
+                    v_frontporch_cfg            = V_FRONTPORCH_480I;
+                    v_backporch_cfg             = V_BACKPORCH_480I;
+                    interlaced_mode             = 1;
+
+                    decode_h_active_width       = H_ACTIVE_480I;       // Expected active width
+                    decode_h_sync_width         = H_SYNC_480I;         // Expected HSYNC width (For noise filtering)
+                    decode_h_backporch          = H_BACKPORCH_480I;          // Expected H Backporch (For aligning image if no DE)
+                    decode_v_active_lines       = V_ACTIVE_480I;       // Expected active lines
+                    decode_v_sync_width         = V_SYNC_480I;         // Expected VSYNC width
+                    decode_v_backporch          = V_BACKPORCH_480I;          // Expected V Backporch (For aligning image)
+                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
+                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_ignore_de            = 1'b0;
                     if (frame_count == 0)
                         $display("\n=== Generating 480i (NTSC) Field ===");
                 end
                 TEST_576P: begin
-                    h_total_cfg = H_TOTAL_576P;
-                    h_active_cfg = H_ACTIVE_576P;
-                    h_sync_cfg = H_SYNC_576P;
-                    h_frontporch_cfg = H_FRONTPORCH_576P;
-                    h_backporch_cfg = H_BACKPORCH_576P;
-                    v_total_cfg = V_TOTAL_576P;
-                    v_active_cfg = V_ACTIVE_576P;
-                    v_sync_cfg = V_SYNC_576P;
-                    v_frontporch_cfg = V_FRONTPORCH_576P;
-                    v_backporch_cfg = V_BACKPORCH_576P;
-                    interlaced_mode = 0;
+                    h_total_cfg                 = H_TOTAL_576P;
+                    h_active_cfg                = H_ACTIVE_576P;
+                    h_sync_cfg                  = H_SYNC_576P;
+                    h_frontporch_cfg            = H_FRONTPORCH_576P;
+                    h_backporch_cfg             = H_BACKPORCH_576P;
+                    v_total_cfg                 = V_TOTAL_576P;
+                    v_active_cfg                = V_ACTIVE_576P;
+                    v_sync_cfg                  = V_SYNC_576P;
+                    v_frontporch_cfg            = V_FRONTPORCH_576P;
+                    v_backporch_cfg             = V_BACKPORCH_576P;
+                    interlaced_mode             = 0;
+
+                    decode_h_active_width       = H_ACTIVE_576P;       // Expected active width
+                    decode_h_sync_width         = H_SYNC_576P;         // Expected HSYNC width (For noise filtering)
+                    decode_h_backporch          = H_BACKPORCH_576P;          // Expected H Backporch (For aligning image if no DE)
+                    decode_v_active_lines       = V_ACTIVE_576P;       // Expected active lines
+                    decode_v_sync_width         = V_SYNC_576P;         // Expected VSYNC width
+                    decode_v_backporch          = V_BACKPORCH_576P;          // Expected V Backporch (For aligning image)
+                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
+                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_ignore_de            = 1'b0;
+
                     if (frame_count == 0)
                         $display("\n=== Generating 576p (PAL) Frame ===");
                 end
                 TEST_576I: begin
-                    h_total_cfg = H_TOTAL_576P;
-                    h_active_cfg = H_ACTIVE_576P;
-                    h_sync_cfg = H_SYNC_576P;
-                    h_frontporch_cfg = H_FRONTPORCH_576P;
-                    h_backporch_cfg = H_BACKPORCH_576P;
-                    v_total_cfg = V_TOTAL_576P;
-                    v_active_cfg = V_ACTIVE_576P;
-                    v_sync_cfg = V_SYNC_576P;
-                    v_frontporch_cfg = V_FRONTPORCH_576P;
-                    v_backporch_cfg = V_BACKPORCH_576P;
-                    interlaced_mode = 1;
+                    h_total_cfg                 = H_TOTAL_576I;
+                    h_active_cfg                = H_ACTIVE_576I;
+                    h_sync_cfg                  = H_SYNC_576I;
+                    h_frontporch_cfg            = H_FRONTPORCH_576I;
+                    h_backporch_cfg             = H_BACKPORCH_576I;
+                    v_total_cfg                 = V_TOTAL_576I;
+                    v_active_cfg                = V_ACTIVE_576I;
+                    v_sync_cfg                  = V_SYNC_576I;
+                    v_frontporch_cfg            = V_FRONTPORCH_576I;
+                    v_backporch_cfg             = V_BACKPORCH_576I;
+                    interlaced_mode             = 1;
+
+                    decode_h_active_width       = H_ACTIVE_576I;       // Expected active width
+                    decode_h_sync_width         = H_SYNC_576I;         // Expected HSYNC width (For noise filtering)
+                    decode_h_backporch          = H_BACKPORCH_576I;          // Expected H Backporch (For aligning image if no DE)
+                    decode_v_active_lines       = V_ACTIVE_576I;       // Expected active lines
+                    decode_v_sync_width         = V_SYNC_576I;         // Expected VSYNC width
+                    decode_v_backporch          = V_BACKPORCH_576I;          // Expected V Backporch (For aligning image)
+                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
+                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_ignore_de            = 1'b0;
                     if (frame_count == 0)
                         $display("\n=== Generating 576i (PAL) Field ===");
                 end
@@ -232,7 +335,9 @@ module tb_SyncDecoder;
                     // VSYNC generation (with interlace offset)
                     if (interlaced_mode && (frame_count % 2 == 1)) begin
                         // Second field: VSYNC at half-line offset
-                        if (v_pos < v_sync_cfg || (v_pos == v_sync_cfg && h_pos < (h_total_cfg/2)))
+                        if ( (v_pos == 0 && h_pos >= (h_total_cfg/2)) || 
+                             (v_pos > 0 && v_pos < v_sync_cfg) ||
+                             (v_pos == v_sync_cfg && h_pos < (h_total_cfg/2)))
                             vsync <= 1'b1;
                         else
                             vsync <= 1'b0;
@@ -263,7 +368,7 @@ module tb_SyncDecoder;
             end
             
             frame_count = frame_count + 1;
-            $display("Generated frame/field %0d with %0d active pixels", frame_count, pixel_count);
+            //$display("Generated frame/field %0d with %0d active pixels", frame_count, pixel_count);
         end
     endtask
 
@@ -371,16 +476,18 @@ module tb_SyncDecoder;
         repeat (10) @(posedge pixel_clk);
         
         test_mode = TEST_480I;
-        repeat (4) generate_frame(TEST_480I);  // Two fields
-        
+        repeat (10) generate_frame(TEST_480I);  // Two fields
+        ///// Fix generation frame for interlaced since there should be two vsync withing 480 vertical lines
+        ///// Currently there is just a higher frequency signal i.e. 2x 480 vertical lines instead of 2x 240 :/
+        ///// the issue there is is that for the interlaced, the vertical counter is reset
         $display("Stabilizing measurements...");
-        repeat (2) generate_frame(TEST_480I);  // Two more fields to stabilize
+        repeat (5) generate_frame(TEST_480I);  // Two more fields to stabilize
         
         repeat (10) @(posedge pixel_clk);
         
-        check_measurements(H_TOTAL_480P, H_ACTIVE_480P, H_SYNC_480P,
-                        H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P,
-                        V_SYNC_480P, V_BACKPORCH_480P, 1);
+        check_measurements(H_TOTAL_480I, H_ACTIVE_480I, H_SYNC_480I,
+                        H_BACKPORCH_480I, V_TOTAL_480I, V_ACTIVE_480I,
+                        V_SYNC_480I, V_BACKPORCH_480I, 1);
                         
         // Reset
         repeat (10) @(posedge pixel_clk);
@@ -425,10 +532,10 @@ module tb_SyncDecoder;
         repeat (2) generate_frame(TEST_576I);
         
         repeat (10) @(posedge pixel_clk);
-        
-        check_measurements(H_TOTAL_576P, H_ACTIVE_576P, H_SYNC_576P,
-                        H_BACKPORCH_576P, V_TOTAL_576P, V_ACTIVE_576P,
-                        V_SYNC_576P, V_BACKPORCH_576P, 1);
+
+        check_measurements(H_TOTAL_576I, H_ACTIVE_576I, H_SYNC_576I,
+                        H_BACKPORCH_576I, V_TOTAL_576I, V_ACTIVE_576I,
+                        V_SYNC_576I, V_BACKPORCH_576I, 1);
                         
         // Reset
         repeat (10) @(posedge pixel_clk);
@@ -443,7 +550,7 @@ module tb_SyncDecoder;
         repeat (10) @(posedge pixel_clk);
         
         test_mode = TEST_720P;
-        repeat (2) generate_frame(TEST_720P);
+        repeat (10) generate_frame(TEST_720P);
         
         $display("Stabilizing measurements...");
         generate_frame(TEST_720P);
@@ -482,7 +589,7 @@ module tb_SyncDecoder;
                 valid_count = valid_count + 1;
             end
             if (frame_start) begin
-                $display(" -> Frame start at time %0t (valid pixels: %0d)", $time, valid_count);
+                //$display(" -> Frame start at time %0t (valid pixels: %0d)", $time, valid_count);
                 valid_count = 0;
             end
         end
