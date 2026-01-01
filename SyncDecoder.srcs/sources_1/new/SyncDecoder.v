@@ -21,10 +21,10 @@ module SyncDecoder #(
 )(
     input  wire         pixel_clk,
     input  wire         rst_n,
-    input  wire         hsync,        // Horizontal sync pulse
-    input  wire         vsync,        // Vertical sync pulse
-    input  wire         de,           // Data enable (optional) - added for compatibilty with analog frontends
-    input  wire [23:0]  rgb,          // Pixel data
+    input  wire         hsync,         
+    input  wire         vsync,
+    input  wire         de,
+    input  wire [23:0]  rgb,
 
     // Configuration inputs
     input wire [11:0]   cfg_h_active_width,   // Expected active width
@@ -50,8 +50,8 @@ module SyncDecoder #(
     output reg [11:0]   v_sync_len,    // VSYNC pulse width
     output reg [11:0]   v_backporch,   // Back porch length
     
-    output reg  interlaced,    // 1=interlaced, 0=progressive
-    output reg  field_id,      // Current field (odd/even)
+    output reg  interlaced,            // 1=interlaced, 0=progressive
+    output reg  field_id,              // Current field (odd/even)
     
     // Position counters
     output reg [11:0]   h_count,       // Current horizontal position
@@ -64,39 +64,29 @@ module SyncDecoder #(
     output wire         frame_start
 );
     
-    //reg hsync_idle_level;
-    //reg vsync_idle_level;
-    //reg polarity_locked;
-    //wire hsync_active   = (hsync != hsync_idle_level);
-    //wire vsync_active   = (vsync != vsync_idle_level);
-    
+    // Polarity detection registers
+    reg hsync_idle_level;
+    reg vsync_idle_level;
+    reg polarity_locked;
+
+    // Delayed signals for edge detection
     reg hsync_d;
     reg vsync_d;
     reg de_d;
-    //wire hsync_start = (hsync != hsync_idle_level) && (hsync_d == hsync_idle_level);
-    //wire hsync_end   = (hsync == hsync_idle_level) && (hsync_d != hsync_idle_level);
-    //wire vsync_start = (vsync != vsync_idle_level) && (vsync_d == vsync_idle_level);
-    //wire vsync_end   = (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
-    //wire de_start    = (de && !de_d);
 
-    wire hsync_start    = (hsync && !hsync_d);
-    wire hsync_end      = (!hsync && hsync_d);
-    wire vsync_start    = (vsync && !vsync_d);
-    wire vsync_end      = (!vsync && vsync_d);
-    wire de_start       = (de && !de_d);
+    // Active signals
+    wire hsync_active   = (hsync != hsync_idle_level);
+    wire vsync_active   = (vsync != vsync_idle_level);
+
+    // Edge detection (polarity-aware)
+    wire hsync_start = polarity_locked && (hsync != hsync_idle_level) && (hsync_d == hsync_idle_level);
+    wire hsync_end   = polarity_locked && (hsync == hsync_idle_level) && (hsync_d != hsync_idle_level);
+    wire vsync_start = polarity_locked && (vsync != vsync_idle_level) && (vsync_d == vsync_idle_level);
+    wire vsync_end   = polarity_locked && (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
+    wire de_start    = (de && !de_d);
     
     wire internal_h_active  = (h_count >= h_sync_len + cfg_h_backporch) && 
                               (h_count <  h_sync_len + cfg_h_backporch + cfg_h_active_width);
-    
-    //reg [11:0] vsync_h_pos;
-    //always @(posedge pixel_clk or negedge rst_n) begin
-    //    if (!rst_n) begin
-    //        vsync_h_pos <= 0;
-    //    end else if (vsync && !vsync_d) begin
-    //        // Capture h_count at the exact moment VSYNC goes high
-    //        vsync_h_pos <= h_count;
-    //    end
-    //end
     
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -121,24 +111,39 @@ module SyncDecoder #(
         end
     end
 
-    // Determine HSYNC & VSYNC idle level
-    //always @(posedge pixel_clk or negedge rst_n) begin
-    //    if (!rst_n) begin
-    //        hsync_idle_level <= 1'b1;
-    //        vsync_idle_level <= 1'b1;
-    //        polarity_locked <= 1'b0;
-    //    end else begin
-    //        if (!de && !polarity_locked) begin
-    //            hsync_idle_level <= hsync;
-    //            vsync_idle_level <= vsync;
-    //        end
-    //        
-    //        // Lock polarity after first VSYNC detection
-    //        if (vsync_start) begin
-    //            polarity_locked <= 1'b1;
-    //        end
-    //    end
-    //end
+    // Polarity detection - sample idle level during blanking periods
+    reg [15:0] blanking_sample_count;
+    reg [15:0] hsync_high_count;
+    reg [15:0] vsync_high_count;
+
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n) begin
+            hsync_idle_level <= 1'b1;
+            vsync_idle_level <= 1'b1;
+            polarity_locked <= 1'b0;
+            blanking_sample_count <= 16'b0;
+            hsync_high_count <= 16'b0;
+            vsync_high_count <= 16'b0;
+        end else begin
+            if (!polarity_locked) begin
+                if (!de) begin // Sample during blanking period (no DE active)
+                    if (blanking_sample_count < 16'd10000) begin
+                        blanking_sample_count <= blanking_sample_count + 1'b1;
+
+                        // Count how often each signal is high during blanking
+                        if (hsync)
+                            hsync_high_count <= hsync_high_count + 1'b1;
+                        if (vsync)
+                            vsync_high_count <= vsync_high_count + 1'b1;
+                    end else begin
+                        hsync_idle_level <= (hsync_high_count > (blanking_sample_count - (blanking_sample_count >> 2)));
+                        vsync_idle_level <= (vsync_high_count > (blanking_sample_count - (blanking_sample_count >> 2)));
+                        polarity_locked <= 1'b1;
+                    end
+                end
+            end
+        end
+    end
 
     // Horizontal pixel counter
     always @(posedge pixel_clk or negedge rst_n) begin
@@ -147,7 +152,7 @@ module SyncDecoder #(
             h_total <= 12'b0;
         end else if (hsync_end) begin
             h_total <= h_count + 12'b1;
-            h_count <= 0;
+            h_count <= 12'b0;
         end else begin
             h_count <= h_count + 12'b1;
         end
@@ -162,7 +167,7 @@ module SyncDecoder #(
             if (hsync_end) begin
                 h_sync_len   <= h_sync_count;
                 h_sync_count <= 12'b0;
-            end else if (hsync) begin
+            end else if (hsync_active) begin
                 h_sync_count <= h_sync_count + 12'b1;
             end
         end
@@ -185,24 +190,33 @@ module SyncDecoder #(
             end
             
             if (de_start) begin
-                h_backporch <= h_count + 122'b1; //From hsync_end to de_start is the backporch
+                h_backporch <= h_count + 12'b1; //From hsync_end to de_start is the backporch
                 h_de_count  <= 12'b1;  // Start counting from 1 on first DE pixel
             end
         end
     end
     
+    // Polarity lock detection (rising edge)
+    reg polarity_locked_d;
+    wire polarity_just_locked = polarity_locked && !polarity_locked_d;
+
+    always @(posedge pixel_clk or negedge rst_n) begin
+        if (!rst_n)
+            polarity_locked_d <= 1'b0;
+        else
+            polarity_locked_d <= polarity_locked;
+    end
+
     // Vertical line counter
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             v_count <= 12'b0;
             v_total <= 12'b0;
-        end else begin
-            if (vsync_start) begin
-                v_total <= v_count;
-                v_count <= 12'b0;
-            end else if (hsync_end) begin
-                v_count <= v_count + 12'b1;
-            end
+        end else if (vsync_start) begin
+            v_total <= v_count;
+            v_count <= 12'b0;
+        end else if (hsync_end) begin
+            v_count <= v_count + 12'b1;
         end
     end
 
@@ -211,12 +225,12 @@ module SyncDecoder #(
         if (!rst_n) begin
             v_sync_count <= 12'b0;
             v_sync_len   <= 12'b0;
-        end else begin 
+        end else begin
             if (vsync_start) begin
                 v_sync_count <= 12'b0;
             end else if (vsync_end) begin
-                v_sync_len   <= v_sync_count;    
-            end else if (vsync && hsync_end) begin
+                v_sync_len   <= v_sync_count;
+            end else if (vsync_active && hsync_end) begin
                 v_sync_count <= v_sync_count + 12'b1;
             end
         end
@@ -284,9 +298,7 @@ module SyncDecoder #(
                     field_id             <= 1'b0;
                     interlace_confidence <= 4'b0;
                 end else if (vsync_start) begin
-                    // Update confidence counter with hysteresis
                     if (is_vsync_mid_line_now) begin
-                        // Increment faster when detecting interlaced
                         if (interlace_confidence < (STABILITY_COUNT + 2))
                             interlace_confidence <= interlace_confidence + 2'b10;
                     end else begin
@@ -301,7 +313,6 @@ module SyncDecoder #(
                     end else if (interlace_confidence <= 1) begin
                         auto_interlaced <= 1'b0;
                     end
-                    // Else maintain previous state during transition
 
                     // Apply Force/Override Logic
                     if (cfg_force_interlaced) begin
@@ -329,7 +340,6 @@ module SyncDecoder #(
                 end else begin
                     if (cfg_force_interlaced) begin
                         interlaced <= 1'b1;
-                        // In forced mode without detection, toggle field on each VSYNC
                         if (vsync_start) begin
                             field_id <= ~field_id;
                         end

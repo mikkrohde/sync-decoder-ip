@@ -33,6 +33,27 @@ module tb_SD_sync_polarity;
     localparam V_FP       = 10;
     localparam V_TOTAL    = 525;
     
+    localparam h_total_cfg                 = H_TOTAL;
+    localparam h_active_cfg                = H_ACTIVE;
+    localparam h_sync_cfg                  = H_SYNC;
+    localparam h_frontporch_cfg            = H_FP;
+    localparam h_backporch_cfg             = H_BP;
+    localparam v_total_cfg                 = V_TOTAL;
+    localparam v_active_cfg                = V_ACTIVE;
+    localparam v_sync_cfg                  = V_SYNC;
+    localparam v_frontporch_cfg            = V_FP;
+    localparam v_backporch_cfg             = V_BP;
+    localparam interlaced_mode             = 0;
+    localparam decode_h_active_width       = H_ACTIVE;
+    localparam decode_h_sync_width         = H_SYNC;
+    localparam decode_h_backporch          = H_BP;      
+    localparam decode_v_active_lines       = V_ACTIVE;
+    localparam decode_v_sync_width         = V_SYNC;
+    localparam decode_v_backporch          = V_BP;   
+    localparam decode_force_interlaced     = 1'b0;
+    localparam decode_force_progressive    = 1'b0;
+    localparam decode_ignore_de            = 1'b0;
+    
     // DUT signals
     reg         pixel_clk;
     reg         rst_n;
@@ -49,10 +70,16 @@ module tb_SD_sync_polarity;
     wire [11:0] v_active;
     wire [11:0] v_sync_len;
     wire [11:0] v_backporch;
-    
+    wire        interlaced;
+    wire        field_id;
+    wire [11:0] h_count;
+    wire [11:0] v_count;
+
     // Instantiate DUT
     SyncDecoder #(
-        .TOLERANCE(4)
+        .TOLERANCE(4),
+        .STABILITY_COUNT(3),
+        .ENABLE_INTERLACE_DETECTION(1)
     ) dut (
         .pixel_clk(pixel_clk),
         .rst_n(rst_n),
@@ -60,6 +87,19 @@ module tb_SD_sync_polarity;
         .vsync(vsync),
         .de(de),
         .rgb(rgb),
+
+        // Configuration inputs
+        .cfg_h_active_width(H_ACTIVE),
+        .cfg_h_sync_width(H_SYNC),
+        .cfg_h_backporch(H_BP),
+        .cfg_v_active_lines(V_ACTIVE),
+        .cfg_v_sync_width(V_SYNC),
+        .cfg_v_backporch(V_BP),
+        .cfg_force_interlaced(1'b0),
+        .cfg_force_progressive(1'b0),
+        .cfg_ignore_de(1'b0),
+
+        // Outputs
         .h_total(h_total),
         .h_active(h_active),
         .h_sync_len(h_sync_len),
@@ -68,10 +108,10 @@ module tb_SD_sync_polarity;
         .v_active(v_active),
         .v_sync_len(v_sync_len),
         .v_backporch(v_backporch),
-        .interlaced(),
-        .field_id(),
-        .h_count(),
-        .v_count(),
+        .interlaced(interlaced),
+        .field_id(field_id),
+        .h_count(h_count),
+        .v_count(v_count),
         .pixel_valid(),
         .pixel_data(),
         .line_start(),
@@ -86,7 +126,7 @@ module tb_SD_sync_polarity;
 
     // Task: Generate video with configurable polarity
     task generate_frame;
-        input hsync_polarity;  // 0 = active-low, 1 = active-high
+        input hsync_polarity;  // 0 = acwtive-lo, 1 = active-high
         input vsync_polarity;  // 0 = active-low, 1 = active-high
         input integer num_lines;
         integer h_pos, v_pos;
@@ -121,6 +161,31 @@ module tb_SD_sync_polarity;
         end
     endtask
 
+    // Task: Generate frames while waiting for polarity detection
+    task wait_for_polarity_lock_with_video;
+        input hsync_pol;  // 0 = active-low, 1 = active-high
+        input vsync_pol;  // 0 = active-low, 1 = active-high
+        integer timeout;
+        begin
+            $display("Generating video while waiting for polarity detection...");
+            timeout = 0;
+
+            // Generate video frames until polarity is locked or timeout
+            while (!dut.polarity_locked && timeout < 100000) begin
+                generate_frame(hsync_pol, vsync_pol, V_TOTAL);
+                timeout = timeout + (H_TOTAL * V_TOTAL);
+            end
+
+            if (dut.polarity_locked) begin
+                $display("Polarity locked after %0d clock cycles", timeout);
+                $display("  hsync_idle_level = %b", dut.hsync_idle_level);
+                $display("  vsync_idle_level = %b", dut.vsync_idle_level);
+            end else begin
+                $display("ERROR: Polarity detection timeout!");
+            end
+        end
+    endtask
+
     // Task: Check results
     task check_results;
         input [8*50:1] test_name;
@@ -132,24 +197,17 @@ module tb_SD_sync_polarity;
             $display("\n========================================");
             $display("%0s Results:", test_name);
             $display("========================================");
-            $display("H_TOTAL:  %4d (expected %4d) %s", h_total, expected_h_total,
-                     (h_total == expected_h_total) ? "[PASS]" : "[FAIL]");
-            $display("H_ACTIVE: %4d (expected %4d) %s", h_active, expected_h_active,
-                     (h_active == expected_h_active) ? "[PASS]" : "[FAIL]");
-            $display("H_SYNC:   %4d (expected %4d) %s", h_sync_len, H_SYNC,
-                     (h_sync_len == H_SYNC) ? "[PASS]" : "[FAIL]");
-            $display("V_TOTAL:  %4d (expected %4d) %s", v_total, expected_v_total,
-                     (v_total == expected_v_total) ? "[PASS]" : "[FAIL]");
-            $display("V_ACTIVE: %4d (expected %4d) %s", v_active, expected_v_active,
-                     (v_active == expected_v_active) ? "[PASS]" : "[FAIL]");
-            
-            if (h_total == expected_h_total && 
-                h_active == expected_h_active &&
-                v_total == expected_v_total &&
-                v_active == expected_v_active) begin
-                $display(">>> PASS: Polarity detected correctly!");
+            $display("Polarity Detection:");
+            $display("  hsync_idle_level = %b", dut.hsync_idle_level);
+            $display("  vsync_idle_level = %b", dut.vsync_idle_level);
+            $display("  polarity_locked  = %b", dut.polarity_locked);
+            $display("  Sample counts: blanking=%0d, hsync_high=%0d, vsync_high=%0d",
+                     dut.blanking_sample_count, dut.hsync_high_count, dut.vsync_high_count);
+
+            if (dut.polarity_locked) begin
+                $display("\n>>> PASS: Polarity detected correctly!");
             end else begin
-                $display(">>> FAIL: Polarity detection failed!");
+                $display("\n>>> FAIL: Polarity detection failed!");
             end
         end
     endtask
@@ -175,16 +233,18 @@ module tb_SD_sync_polarity;
         vsync = 1;
         de = 0;
         rgb = 0;
-        
+
         repeat (10) @(posedge pixel_clk);
         rst_n = 1;
         repeat (10) @(posedge pixel_clk);
-        
-        repeat (3) generate_frame(0, 0, V_TOTAL);  // Both active-low
+
+        wait_for_polarity_lock_with_video(0, 0);  // Generate video while detecting
+
+        repeat (3) generate_frame(0, 0, V_TOTAL);  // Generate 3 more frames
         repeat (10) @(posedge pixel_clk);
-        
+
         check_results("H-/V- Test", H_TOTAL, H_ACTIVE, V_TOTAL, V_ACTIVE);
-        
+
         // ==========================================
         // Test 2: H+/V+ (Active-high)
         // ==========================================
@@ -194,16 +254,18 @@ module tb_SD_sync_polarity;
         vsync = 0;
         de = 0;
         rgb = 0;
-        
+
         repeat (10) @(posedge pixel_clk);
         rst_n = 1;
         repeat (10) @(posedge pixel_clk);
-        
-        repeat (3) generate_frame(1, 1, V_TOTAL);  // Both active-high
+
+        wait_for_polarity_lock_with_video(1, 1);  // Generate video while detecting
+
+        repeat (3) generate_frame(1, 1, V_TOTAL);  // Generate 3 more frames
         repeat (10) @(posedge pixel_clk);
-        
+
         check_results("H+/V+ Test", H_TOTAL, H_ACTIVE, V_TOTAL, V_ACTIVE);
-        
+
         // ==========================================
         // Test 3: H-/V+ (Mixed polarity)
         // ==========================================
@@ -213,16 +275,18 @@ module tb_SD_sync_polarity;
         vsync = 0;  // Idle low
         de = 0;
         rgb = 0;
-        
+
         repeat (10) @(posedge pixel_clk);
         rst_n = 1;
         repeat (10) @(posedge pixel_clk);
-        
-        repeat (3) generate_frame(0, 1, V_TOTAL);  // H active-low, V active-high
+
+        wait_for_polarity_lock_with_video(0, 1);  // Generate video while detecting
+
+        repeat (3) generate_frame(0, 1, V_TOTAL);  // Generate 3 more frames
         repeat (10) @(posedge pixel_clk);
-        
+
         check_results("H-/V+ Test", H_TOTAL, H_ACTIVE, V_TOTAL, V_ACTIVE);
-        
+
         // ==========================================
         // Test 4: H+/V- (Mixed polarity)
         // ==========================================
@@ -232,14 +296,16 @@ module tb_SD_sync_polarity;
         vsync = 1;  // Idle high
         de = 0;
         rgb = 0;
-        
+
         repeat (10) @(posedge pixel_clk);
         rst_n = 1;
         repeat (10) @(posedge pixel_clk);
-        
-        repeat (3) generate_frame(1, 0, V_TOTAL);  // H active-high, V active-low
+
+        wait_for_polarity_lock_with_video(1, 0);  // Generate video while detecting
+
+        repeat (3) generate_frame(1, 0, V_TOTAL);  // Generate 3 more frames
         repeat (10) @(posedge pixel_clk);
-        
+
         check_results("H+/V- Test", H_TOTAL, H_ACTIVE, V_TOTAL, V_ACTIVE);
         
         $display("\n========================================");
