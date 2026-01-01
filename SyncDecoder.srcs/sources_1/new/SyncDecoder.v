@@ -21,10 +21,10 @@ module SyncDecoder #(
 )(
     input  wire         pixel_clk,
     input  wire         rst_n,
-    input  wire         hsync,        // Horizontal sync pulse
-    input  wire         vsync,        // Vertical sync pulse
-    input  wire         de,           // Data enable (optional) - added for compatibilty with analog frontends
-    input  wire [23:0]  rgb,          // Pixel data
+    input  wire         hsync,         
+    input  wire         vsync,
+    input  wire         de,
+    input  wire [23:0]  rgb,
 
     // Configuration inputs
     input wire [11:0]   cfg_h_active_width,   // Expected active width
@@ -50,8 +50,8 @@ module SyncDecoder #(
     output reg [11:0]   v_sync_len,    // VSYNC pulse width
     output reg [11:0]   v_backporch,   // Back porch length
     
-    output reg  interlaced,    // 1=interlaced, 0=progressive
-    output reg  field_id,      // Current field (odd/even)
+    output reg  interlaced,            // 1=interlaced, 0=progressive
+    output reg  field_id,              // Current field (odd/even)
     
     // Position counters
     output reg [11:0]   h_count,       // Current horizontal position
@@ -74,7 +74,7 @@ module SyncDecoder #(
     reg vsync_d;
     reg de_d;
 
-    // Active signal detection
+    // Active signals
     wire hsync_active   = (hsync != hsync_idle_level);
     wire vsync_active   = (vsync != vsync_idle_level);
 
@@ -126,19 +126,16 @@ module SyncDecoder #(
             vsync_high_count <= 16'b0;
         end else begin
             if (!polarity_locked) begin
-                // Sample during blanking period (no DE active)
-                if (!de) begin
+                if (!de) begin // Sample during blanking period (no DE active)
                     if (blanking_sample_count < 16'd10000) begin
                         blanking_sample_count <= blanking_sample_count + 1'b1;
 
+                        // Count how often each signal is high during blanking
                         if (hsync)
                             hsync_high_count <= hsync_high_count + 1'b1;
                         if (vsync)
                             vsync_high_count <= vsync_high_count + 1'b1;
                     end else begin
-                        // After sampling, determine idle levels
-                        // If signal is high more than 75% of the time, idle is high (active-low sync)
-                        // If signal is low more than 75% of the time, idle is low (active-high sync)
                         hsync_idle_level <= (hsync_high_count > (blanking_sample_count - (blanking_sample_count >> 2)));
                         vsync_idle_level <= (vsync_high_count > (blanking_sample_count - (blanking_sample_count >> 2)));
                         polarity_locked <= 1'b1;
@@ -255,7 +252,7 @@ module SyncDecoder #(
             end else if (hsync_end) begin
                 if (line_has_de) begin
                     if (v_de_count == 0) begin
-                        v_backporch <= v_count - v_sync_len;
+                        v_backporch <= v_count - v_sync_len; // -1 bandaid solution for timing issue
                         v_de_start  <= v_count;
                     end
                     v_de_count <= v_de_count + 12'b1;
@@ -276,6 +273,9 @@ module SyncDecoder #(
             reg [3:0] interlace_confidence = 4'b0;
             reg [11:0] vsync_h_pos_latched = 12'b0;
             reg is_vsync_mid_line_latched = 1'b0;
+
+            // Check if current h_count indicates mid-line (half-line for interlace)
+            // For interlaced: even fields start VSYNC at ~h_total/2, odd fields at ~0
             wire [11:0] half_line = h_total >> 1;
             wire is_vsync_mid_line_now = (h_count >= ((half_line - h_sync_len) - TOLERANCE)) &&
                                           (h_count <= ((half_line - h_sync_len) + TOLERANCE));
@@ -298,9 +298,7 @@ module SyncDecoder #(
                     field_id             <= 1'b0;
                     interlace_confidence <= 4'b0;
                 end else if (vsync_start) begin
-                    // Update confidence counter with hysteresis
                     if (is_vsync_mid_line_now) begin
-                        // Increment faster when detecting interlaced
                         if (interlace_confidence < (STABILITY_COUNT + 2))
                             interlace_confidence <= interlace_confidence + 2'b10;
                     end else begin
@@ -315,7 +313,6 @@ module SyncDecoder #(
                     end else if (interlace_confidence <= 1) begin
                         auto_interlaced <= 1'b0;
                     end
-                    // Else maintain previous state during transition
 
                     // Apply Force/Override Logic
                     if (cfg_force_interlaced) begin
@@ -343,7 +340,6 @@ module SyncDecoder #(
                 end else begin
                     if (cfg_force_interlaced) begin
                         interlaced <= 1'b1;
-                        // In forced mode without detection, toggle field on each VSYNC
                         if (vsync_start) begin
                             field_id <= ~field_id;
                         end

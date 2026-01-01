@@ -310,11 +310,11 @@ module tb_SyncDecoder;
                     decode_h_active_width       = H_ACTIVE_576I;       // Expected active width
                     decode_h_sync_width         = H_SYNC_576I;         // Expected HSYNC width (For noise filtering)
                     decode_h_backporch          = H_BACKPORCH_576I;          // Expected H Backporch (For aligning image if no DE)
-                    decode_v_active_lines       = V_ACTIVE_576I;       // Expected active lines
-                    decode_v_sync_width         = V_SYNC_576I;         // Expected VSYNC width
-                    decode_v_backporch          = V_BACKPORCH_576I;          // Expected V Backporch (For aligning image)
-                    decode_force_interlaced     = 1'b0;     // 1 = Force Interlaced mode (override detection)
-                    decode_force_progressive    = 1'b0;    // 1 = Force Progressive mode (override detection)
+                    decode_v_active_lines       = V_ACTIVE_576I;       
+                    decode_v_sync_width         = V_SYNC_576I;         
+                    decode_v_backporch          = V_BACKPORCH_576I;         
+                    decode_force_interlaced     = 1'b0;    
+                    decode_force_progressive    = 1'b0;   
                     decode_ignore_de            = 1'b0;
                     if (frame_count == 0)
                         $display("\n=== Generating 576i (PAL) Field ===");
@@ -334,7 +334,6 @@ module tb_SyncDecoder;
                     
                     // VSYNC generation (with interlace offset)
                     if (interlaced_mode && (frame_count % 2 == 1)) begin
-                        // Second field: VSYNC at half-line offset
                         if ( (v_pos == 0 && h_pos >= (h_total_cfg/2)) || 
                              (v_pos > 0 && v_pos < v_sync_cfg) ||
                              (v_pos == v_sync_cfg && h_pos < (h_total_cfg/2)))
@@ -368,7 +367,6 @@ module tb_SyncDecoder;
             end
             
             frame_count = frame_count + 1;
-            //$display("Generated frame/field %0d with %0d active pixels", frame_count, pixel_count);
         end
     endtask
 
@@ -451,13 +449,10 @@ module tb_SyncDecoder;
         frame_count = 0;
         repeat (3) generate_frame(TEST_480P);
         
-        // *** KEY FIX: Wait while continuing to generate signal! ***
-        // The decoder needs stable input to finalize measurements
-        // Generate one MORE frame so measurements from frame 3 are latched
         $display("Stabilizing measurements...");
         generate_frame(TEST_480P);
         
-        repeat (10) @(posedge pixel_clk);  // Just a small gap
+        repeat (10) @(posedge pixel_clk);
         
         check_measurements(H_TOTAL_480P, H_ACTIVE_480P, H_SYNC_480P, 
                         H_BACKPORCH_480P, V_TOTAL_480P, V_ACTIVE_480P, 
@@ -476,12 +471,10 @@ module tb_SyncDecoder;
         repeat (10) @(posedge pixel_clk);
         
         test_mode = TEST_480I;
-        repeat (10) generate_frame(TEST_480I);  // Two fields
-        ///// Fix generation frame for interlaced since there should be two vsync withing 480 vertical lines
-        ///// Currently there is just a higher frequency signal i.e. 2x 480 vertical lines instead of 2x 240 :/
-        ///// the issue there is is that for the interlaced, the vertical counter is reset
+        repeat (10) generate_frame(TEST_480I);
+        
         $display("Stabilizing measurements...");
-        repeat (5) generate_frame(TEST_480I);  // Two more fields to stabilize
+        repeat (5) generate_frame(TEST_480I);
         
         repeat (10) @(posedge pixel_clk);
         
