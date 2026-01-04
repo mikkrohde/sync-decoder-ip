@@ -112,10 +112,17 @@ module tb_SD_sync_polarity;
         .field_id(field_id),
         .h_count(h_count),
         .v_count(v_count),
-        .pixel_valid(),
-        .pixel_data(),
-        .line_start(),
-        .frame_start()
+        // VPU outputs (not used in this test)
+        .vpu_out_valid(),
+        .vpu_out_pixel(),
+        .vpu_out_line_start(),
+        .vpu_out_frame_start(),
+        .vpu_out_interlaced(),
+        .vpu_out_field_id(),
+        .vpu_out_h_count(),
+        .vpu_out_v_count(),
+        .vpu_out_h_active(),
+        .vpu_out_v_active()
     );
 
     // Clock generation

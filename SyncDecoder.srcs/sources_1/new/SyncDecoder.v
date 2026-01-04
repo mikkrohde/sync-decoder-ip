@@ -52,16 +52,22 @@ module SyncDecoder #(
     
     output reg  interlaced,            // 1=interlaced, 0=progressive
     output reg  field_id,              // Current field (odd/even)
-    
+
     // Position counters
     output reg [11:0]   h_count,       // Current horizontal position
     output reg [11:0]   v_count,       // Current vertical position
-    
-    // Output stream (synchronized to active region)
-    output wire         pixel_valid,
-    output wire [23:0]  pixel_data,
-    output wire         line_start,
-    output wire         frame_start
+
+    // VPU Output Stream (synchronized to active region)
+    output wire         vpu_out_valid,
+    output wire [23:0]  vpu_out_pixel,
+    output wire         vpu_out_line_start,
+    output wire         vpu_out_frame_start,
+    output wire         vpu_out_interlaced,
+    output wire         vpu_out_field_id,
+    output wire [11:0]  vpu_out_h_count,
+    output wire [11:0]  vpu_out_v_count,
+    output wire [11:0]  vpu_out_h_active,
+    output wire [11:0]  vpu_out_v_active
 );
     
     // Polarity detection registers
@@ -352,10 +358,16 @@ module SyncDecoder #(
         end
     endgenerate
 
-    // Output assignments
-    assign pixel_valid = (cfg_ignore_de) ? internal_h_active : de;
-    assign pixel_data   = rgb;
-    assign line_start   = hsync_start;
-    assign frame_start  = vsync_start;
+    // VPU Output assignments
+    assign vpu_out_valid       = (cfg_ignore_de) ? internal_h_active : de;
+    assign vpu_out_pixel       = rgb;
+    assign vpu_out_line_start  = hsync_start;
+    assign vpu_out_frame_start = vsync_start;
+    assign vpu_out_interlaced  = interlaced;
+    assign vpu_out_field_id    = field_id;
+    assign vpu_out_h_count     = h_count;
+    assign vpu_out_v_count     = v_count;
+    assign vpu_out_h_active    = h_active;
+    assign vpu_out_v_active    = v_active;
 
 endmodule
