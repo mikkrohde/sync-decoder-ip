@@ -10,7 +10,7 @@
 // Description: Testbench for SyncDecoder - with NTSC and PAL test signals
 // 
 // Revision 1.0 - Initial Implementation
-// Additional Comments:
+// Additional Comments: TODO - update the instantiation to match the new SyncDecoder interface
 // 
 //////////////////////////////////////////////////////////////////////////////////
 

@@ -106,6 +106,8 @@ isim.log
 **/bd/*/.Xil/
 **/bd/*/hw_handoff/
 **/bd/*/.srcs/
+**/ip-core/
+**/ip-core/
 
 # EXCEPTION: Keep the block design source and any custom HDL
 !**/bd/*.bd

@@ -27,47 +27,45 @@ module SyncDecoder #(
     input  wire [23:0]  rgb,
 
     // Configuration inputs
-    input wire [11:0]   cfg_h_active_width,   // Expected active width
-    input wire [11:0]   cfg_h_sync_width,     // Expected HSYNC width (For noise filtering)
-    input wire [11:0]   cfg_h_backporch,      // Expected H Backporch (For aligning image if no DE)
+    input wire [11:0]   VPU_cfg_h_active_width,   // Expected active width
+    input wire [11:0]   VPU_cfg_h_sync_width,     // Expected HSYNC width (For noise filtering)
+    input wire [11:0]   VPU_cfg_h_backporch,      // Expected H Backporch (For aligning image if no DE)
     
-    input wire [11:0]   cfg_v_active_lines,   // Expected active lines
-    input wire [11:0]   cfg_v_sync_width,     // Expected VSYNC width
-    input wire [11:0]   cfg_v_backporch,      // Expected V Backporch (For aligning image)
+    input wire [11:0]   VPU_cfg_v_active_lines,   // Expected active lines
+    input wire [11:0]   VPU_cfg_v_sync_width,     // Expected VSYNC width
+    input wire [11:0]   VPU_cfg_v_backporch,      // Expected V Backporch (For aligning image)
     
-    input wire          cfg_force_interlaced,  // 1 = Force Interlaced mode (override detection)
-    input wire          cfg_force_progressive, // 1 = Force Progressive mode (override detection)
-    input wire          cfg_ignore_de,         // 1 = Ignore hardware DE, generate internally using cfg values
+    input wire          VPU_cfg_force_interlaced,  // 1 = Force Interlaced mode (override detection)
+    input wire          VPU_cfg_force_progressive, // 1 = Force Progressive mode (override detection)
+    input wire          VPU_cfg_ignore_de,         // 1 = Ignore hardware DE, generate internally using cfg values
 
     // Detected timing parameters
-    output reg [11:0]   h_total,       // Total pixels per line
-    output reg [11:0]   h_active,      // Active pixels per line
-    output reg [11:0]   h_sync_len,    // HSYNC pulse width
-    output reg [11:0]   h_backporch,   // Back porch length
+    output reg [11:0]   det_h_total,       // Total pixels per line
+    output reg [11:0]   det_h_active,      // Active pixels per line
+    output reg [11:0]   det_h_sync_len,    // HSYNC pulse width
+    output reg [11:0]   det_h_backporch,   // Back porch length
     
-    output reg [11:0]   v_total,       // Total lines per frame
-    output reg [11:0]   v_active,      // Active lines per frame
-    output reg [11:0]   v_sync_len,    // VSYNC pulse width
-    output reg [11:0]   v_backporch,   // Back porch length
+    output reg [11:0]   det_v_total,       // Total lines per frame
+    output reg [11:0]   det_v_active,      // Active lines per frame
+    output reg [11:0]   det_v_sync_len,    // VSYNC pulse width
+    output reg [11:0]   det_v_backporch,   // Back porch length
+    output reg          det_interlaced, // 1=interlaced, 0=progressive
+    output reg          det_field_id,   // Current field (odd/even)
+
+    output reg [11:0]   det_h_count,
+    output reg [11:0]   det_v_count,   
     
-    output reg  interlaced,            // 1=interlaced, 0=progressive
-    output reg  field_id,              // Current field (odd/even)
-
-    // Position counters
-    output reg [11:0]   h_count,       // Current horizontal position
-    output reg [11:0]   v_count,       // Current vertical position
-
     // VPU Output Stream (synchronized to active region)
-    output wire         vpu_out_valid,
-    output wire [23:0]  vpu_out_pixel,
-    output wire         vpu_out_line_start,
-    output wire         vpu_out_frame_start,
-    output wire         vpu_out_interlaced,
-    output wire         vpu_out_field_id,
-    output wire [11:0]  vpu_out_h_count,
-    output wire [11:0]  vpu_out_v_count,
-    output wire [11:0]  vpu_out_h_active,
-    output wire [11:0]  vpu_out_v_active
+    output wire         VPU_out_valid,
+    output wire [23:0]  VPU_out_pixel,
+    output wire         VPU_out_line_start,
+    output wire         VPU_out_frame_start,
+    output wire         VPU_out_interlaced, // 1=interlaced, 0=progressive
+    output wire         VPU_out_field_id,   // Current field (odd/even)
+    output wire [11:0]  VPU_out_h_count,
+    output wire [11:0]  VPU_out_v_count,
+    output wire [11:0]  VPU_out_h_active,
+    output wire [11:0]  VPU_out_v_active
 );
     
     // Polarity detection registers
@@ -79,6 +77,7 @@ module SyncDecoder #(
     reg hsync_d;
     reg vsync_d;
     reg de_d;
+    reg internal_de_d;
 
     // Active signals
     wire hsync_active   = (hsync != hsync_idle_level);
@@ -91,8 +90,15 @@ module SyncDecoder #(
     wire vsync_end   = polarity_locked && (vsync == vsync_idle_level) && (vsync_d != vsync_idle_level);
     wire de_start    = (de && !de_d);
     
-    wire internal_h_active  = (h_count >= h_sync_len + cfg_h_backporch) && 
-                              (h_count <  h_sync_len + cfg_h_backporch + cfg_h_active_width);
+    wire internal_h_active  = (det_h_count >= det_h_sync_len + VPU_cfg_h_backporch) && 
+                              (det_h_count <  det_h_sync_len + VPU_cfg_h_backporch + VPU_cfg_h_active_width);
+    wire internal_v_active  = (det_v_count >= det_v_sync_len + VPU_cfg_v_backporch) && 
+                              (det_v_count <  det_v_sync_len + VPU_cfg_v_backporch + VPU_cfg_v_active_lines);                            
+    wire internal_de = internal_h_active && internal_v_active;
+    wire internal_de_start = (VPU_cfg_ignore_de) ? (internal_de && !internal_de_d) : de_start;
+   
+    wire effective_de = (VPU_cfg_ignore_de) ? internal_de : de;
+    
     
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -110,10 +116,12 @@ module SyncDecoder #(
             hsync_d <= 1'b0;
             vsync_d <= 1'b0;
             de_d    <= 1'b0;
+            internal_de_d <= 1'b0;
         end else begin
             hsync_d <= hsync;
             vsync_d <= vsync;
             de_d    <= de;
+            internal_de_d <= internal_de;
         end
     end
 
@@ -132,7 +140,7 @@ module SyncDecoder #(
             vsync_high_count <= 16'b0;
         end else begin
             if (!polarity_locked) begin
-                if (!de) begin // Sample during blanking period (no DE active)
+                if (!effective_de) begin // Sample during blanking period (no DE active)
                     if (blanking_sample_count < 16'd10000) begin
                         blanking_sample_count <= blanking_sample_count + 1'b1;
 
@@ -154,13 +162,13 @@ module SyncDecoder #(
     // Horizontal pixel counter
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
-            h_count <= 12'b0;
-            h_total <= 12'b0;
+            det_h_count <= 12'b0;
+            det_h_total <= 12'b0;
         end else if (hsync_end) begin
-            h_total <= h_count + 12'b1;
-            h_count <= 12'b0;
+            det_h_total <= det_h_count + 12'b1;
+            det_h_count <= 12'b0;
         end else begin
-            h_count <= h_count + 12'b1;
+            det_h_count <= det_h_count + 12'b1;
         end
     end
 
@@ -168,10 +176,10 @@ module SyncDecoder #(
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             h_sync_count <= 12'b0;
-            h_sync_len   <= 12'b0;
+            det_h_sync_len   <= 12'b0;
         end else begin
             if (hsync_end) begin
-                h_sync_len   <= h_sync_count;
+                det_h_sync_len <= h_sync_count;
                 h_sync_count <= 12'b0;
             end else if (hsync_active) begin
                 h_sync_count <= h_sync_count + 12'b1;
@@ -184,19 +192,19 @@ module SyncDecoder #(
         if (!rst_n) begin
             h_de_count  <= 12'b0;
             h_de_start  <= 12'b0;
-            h_active    <= 12'b0;
-            h_backporch <= 12'b0;
+            det_h_active    <= 12'b0;
+            det_h_backporch <= 12'b0;
         end else begin
-            if (de) begin
+            if (effective_de) begin
                 h_de_count <= h_de_count + 12'b1;  // Only count while DE is high
             end
 
             if (hsync_end) begin
-                h_active   <= h_de_count;
+                det_h_active   <= h_de_count;
             end
             
-            if (de_start) begin
-                h_backporch <= h_count + 12'b1; //From hsync_end to de_start is the backporch
+            if (internal_de_start) begin
+                det_h_backporch <= det_h_count + 12'b1; //From hsync_end to de_start is the backporch
                 h_de_count  <= 12'b1;  // Start counting from 1 on first DE pixel
             end
         end
@@ -216,13 +224,13 @@ module SyncDecoder #(
     // Vertical line counter
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
-            v_count <= 12'b0;
-            v_total <= 12'b0;
+            det_v_count <= 12'b0;
+            det_v_total <= 12'b0;
         end else if (vsync_start) begin
-            v_total <= v_count;
-            v_count <= 12'b0;
+            det_v_total <= det_v_count;
+            det_v_count <= 12'b0;
         end else if (hsync_end) begin
-            v_count <= v_count + 12'b1;
+            det_v_count <= det_v_count + 12'b1;
         end
     end
 
@@ -230,12 +238,12 @@ module SyncDecoder #(
     always @(posedge pixel_clk or negedge rst_n) begin
         if (!rst_n) begin
             v_sync_count <= 12'b0;
-            v_sync_len   <= 12'b0;
+            det_v_sync_len   <= 12'b0;
         end else begin
             if (vsync_start) begin
                 v_sync_count <= 12'b0;
             end else if (vsync_end) begin
-                v_sync_len   <= v_sync_count;
+                det_v_sync_len   <= v_sync_count;
             end else if (vsync_active && hsync_end) begin
                 v_sync_count <= v_sync_count + 12'b1;
             end
@@ -247,24 +255,24 @@ module SyncDecoder #(
         if (!rst_n) begin
             v_de_count  <= 12'b0;
             v_de_start  <= 12'b0;
-            v_active    <= 12'b0;
-            v_backporch <= 12'b0;
+            det_v_active    <= 12'b0;
+            det_v_backporch <= 12'b0;
             line_has_de <= 1'b0;
         end else begin
             if (vsync_start) begin
-                v_active   <= v_de_count;
+                det_v_active   <= v_de_count;
                 v_de_count <= 12'b0;
                 line_has_de <= 1'b0;
             end else if (hsync_end) begin
                 if (line_has_de) begin
                     if (v_de_count == 0) begin
-                        v_backporch <= v_count - v_sync_len; // -1 bandaid solution for timing issue
-                        v_de_start  <= v_count;
+                        det_v_backporch <= det_v_count - det_v_sync_len; // -1 bandaid solution for timing issue
+                        v_de_start  <= det_v_count;
                     end
                     v_de_count <= v_de_count + 12'b1;
                 end
                 line_has_de <= 1'b0;
-            end else if (de) begin
+            end else if (effective_de) begin
                 line_has_de <= 1'b1;
             end
         end
@@ -282,9 +290,9 @@ module SyncDecoder #(
 
             // Check if current h_count indicates mid-line (half-line for interlace)
             // For interlaced: even fields start VSYNC at ~h_total/2, odd fields at ~0
-            wire [11:0] half_line = h_total >> 1;
-            wire is_vsync_mid_line_now = (h_count >= ((half_line - h_sync_len) - TOLERANCE)) &&
-                                          (h_count <= ((half_line - h_sync_len) + TOLERANCE));
+            wire [11:0] half_line = det_h_total >> 1;
+            wire is_vsync_mid_line_now = (det_h_count >= ((half_line - det_h_sync_len) - TOLERANCE)) &&
+                                          (det_h_count <= ((half_line - det_h_sync_len) + TOLERANCE));
 
             // Latch h_count position and mid-line status when VSYNC starts
             always @(posedge pixel_clk or negedge rst_n) begin
@@ -292,7 +300,7 @@ module SyncDecoder #(
                     vsync_h_pos_latched <= 12'b0;
                     is_vsync_mid_line_latched <= 1'b0;
                 end else if (vsync_start) begin
-                    vsync_h_pos_latched <= h_count;
+                    vsync_h_pos_latched <= det_h_count;
                     is_vsync_mid_line_latched <= is_vsync_mid_line_now;
                 end
             end
@@ -300,8 +308,8 @@ module SyncDecoder #(
             always @(posedge pixel_clk or negedge rst_n) begin
                 if (!rst_n) begin
                     auto_interlaced      <= 1'b0;
-                    interlaced           <= 1'b0;
-                    field_id             <= 1'b0;
+                    det_interlaced           <= 1'b0;
+                    det_field_id             <= 1'b0;
                     interlace_confidence <= 4'b0;
                 end else if (vsync_start) begin
                     if (is_vsync_mid_line_now) begin
@@ -321,19 +329,19 @@ module SyncDecoder #(
                     end
 
                     // Apply Force/Override Logic
-                    if (cfg_force_interlaced) begin
-                        interlaced <= 1'b1;
-                    end else if (cfg_force_progressive) begin
-                        interlaced <= 1'b0;
+                    if (VPU_cfg_force_interlaced) begin
+                        det_interlaced <= 1'b1;
+                    end else if (VPU_cfg_force_progressive) begin
+                        det_interlaced <= 1'b0;
                     end else begin
-                        interlaced <= auto_interlaced;
+                        det_interlaced <= auto_interlaced;
                     end
 
                     // Determine field ID based on VSYNC position
-                    if (interlaced || cfg_force_interlaced) begin
-                        field_id <= is_vsync_mid_line_now ? 1'b1 : 1'b0;
+                    if (det_interlaced || VPU_cfg_force_interlaced) begin
+                        det_field_id <= is_vsync_mid_line_now ? 1'b1 : 1'b0;
                     end else begin
-                        field_id <= 1'b0; // Progressive mode, always field 0
+                        det_field_id <= 1'b0; // Progressive mode, always field 0
                     end
                 end
             end
@@ -341,17 +349,17 @@ module SyncDecoder #(
             // When interlace detection is disabled
             always @(posedge pixel_clk or negedge rst_n) begin
                 if (!rst_n) begin
-                    interlaced           <= 1'b0;
-                    field_id             <= 1'b0;
+                    det_interlaced           <= 1'b0;
+                    det_field_id             <= 1'b0;
                 end else begin
-                    if (cfg_force_interlaced) begin
-                        interlaced <= 1'b1;
+                    if (VPU_cfg_force_interlaced) begin
+                        det_interlaced <= 1'b1;
                         if (vsync_start) begin
-                            field_id <= ~field_id;
+                            det_field_id <= ~det_field_id;
                         end
-                    end else if (cfg_force_progressive) begin
-                        interlaced <= 1'b0;
-                        field_id   <= 1'b0;
+                    end else if (VPU_cfg_force_progressive) begin
+                        det_interlaced <= 1'b0;
+                        det_field_id   <= 1'b0;
                     end
                 end
             end
@@ -359,15 +367,15 @@ module SyncDecoder #(
     endgenerate
 
     // VPU Output assignments
-    assign vpu_out_valid       = (cfg_ignore_de) ? internal_h_active : de;
-    assign vpu_out_pixel       = rgb;
-    assign vpu_out_line_start  = hsync_start;
-    assign vpu_out_frame_start = vsync_start;
-    assign vpu_out_interlaced  = interlaced;
-    assign vpu_out_field_id    = field_id;
-    assign vpu_out_h_count     = h_count;
-    assign vpu_out_v_count     = v_count;
-    assign vpu_out_h_active    = h_active;
-    assign vpu_out_v_active    = v_active;
+    assign VPU_out_valid       = effective_de;
+    assign VPU_out_pixel       = rgb;
+    assign VPU_out_line_start  = hsync_start;
+    assign VPU_out_frame_start = vsync_start;
+    assign VPU_out_interlaced  = det_interlaced;
+    assign VPU_out_field_id    = det_field_id;
+    assign VPU_out_h_count     = det_h_count;
+    assign VPU_out_v_count     = det_v_count;
+    assign VPU_out_h_active    = det_h_active;
+    assign VPU_out_v_active    = det_v_active;
 
 endmodule
