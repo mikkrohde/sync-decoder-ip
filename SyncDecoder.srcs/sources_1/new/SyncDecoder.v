@@ -19,12 +19,14 @@ module SyncDecoder #(
     parameter STABILITY_COUNT = 3, // Number of consistent frames before locking timing
     parameter ENABLE_INTERLACE_DETECTION = 1 // Enable interlace detection logic
 )(
-    input  wire         pixel_clk,
-    input  wire         rst_n,
-    input  wire         hsync,         
-    input  wire         vsync,
-    input  wire         de,
-    input  wire [23:0]  rgb,
+    input  wire        pixel_clk,
+    input  wire        rst_n,
+    input  wire        hsync,         
+    input  wire        vsync,
+    input  wire        de,
+    input  wire [7:0]  in_vga_r,
+    input  wire [7:0]  in_vga_g,
+    input  wire [7:0]  in_vga_b,
 
     // Configuration inputs
     input wire [11:0]   VPU_cfg_h_active_width,   // Expected active width
@@ -98,7 +100,7 @@ module SyncDecoder #(
     wire internal_de_start = (VPU_cfg_ignore_de) ? (internal_de && !internal_de_d) : de_start;
    
     wire effective_de = (VPU_cfg_ignore_de) ? internal_de : de;
-    
+    wire rgb = {in_vga_r, in_vga_g, in_vga_b};
     
     // Measurement registers
     reg [11:0] h_sync_count;
