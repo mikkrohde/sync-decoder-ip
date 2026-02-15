@@ -24,9 +24,6 @@ module SyncDecoder #(
     input  wire        hsync,         
     input  wire        vsync,
     input  wire        de,
-    input  wire [7:0]  in_vga_r,
-    input  wire [7:0]  in_vga_g,
-    input  wire [7:0]  in_vga_b,
 
     // Configuration inputs
     input wire [11:0]   VPU_cfg_h_active_width,   // Expected active width
@@ -100,7 +97,6 @@ module SyncDecoder #(
     wire internal_de_start = (VPU_cfg_ignore_de) ? (internal_de && !internal_de_d) : de_start;
    
     wire effective_de = (VPU_cfg_ignore_de) ? internal_de : de;
-    wire rgb = {in_vga_r, in_vga_g, in_vga_b};
     
     // Measurement registers
     reg [11:0] h_sync_count;
@@ -370,7 +366,6 @@ module SyncDecoder #(
 
     // VPU Output assignments
     assign VPU_out_valid       = effective_de;
-    assign VPU_out_pixel       = rgb;
     assign VPU_out_line_start  = hsync_start;
     assign VPU_out_frame_start = vsync_start;
     assign VPU_out_interlaced  = det_interlaced;

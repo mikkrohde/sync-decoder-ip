@@ -76,7 +76,6 @@ module SyncDecoder_AXI #(
     input  wire                                hsync,
     input  wire                                vsync,
     input  wire                                de,
-    input  wire [23:0]                         rgb,
     
     // VPU Output Stream (active region, directly from SyncDecoder)
     output wire                                VPU_out_valid,
@@ -365,7 +364,6 @@ module SyncDecoder_AXI #(
         .hsync                  (hsync),
         .vsync                  (vsync),
         .de                     (de),
-        .rgb                    (rgb),
         
         // Configuration inputs (synchronized)
         .VPU_cfg_h_active_width     (sync_cfg_h_active),
