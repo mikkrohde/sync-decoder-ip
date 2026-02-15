@@ -56,7 +56,6 @@ module SyncDecoder #(
     
     // VPU Output Stream (synchronized to active region)
     output wire         VPU_out_valid,
-    output wire [23:0]  VPU_out_pixel,
     output wire         VPU_out_line_start,
     output wire         VPU_out_frame_start,
     output wire         VPU_out_interlaced, // 1=interlaced, 0=progressive
